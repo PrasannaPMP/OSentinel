@@ -1,5 +1,6 @@
 import time
 import threading
+from backend.modules.module1_process import set_simulated_process_activity
 from backend.modules.module2_file import set_simulated_file_activity
 from backend.modules.module3_network import set_simulated_network_activity
 
@@ -17,9 +18,10 @@ def trigger_attack_simulation(attack_type: str) -> dict:
             "type": "Ransomware Mass Encryption Burst",
             "started_at": timestamp,
             "duration": 5.0,
-            "details": "Simulated rapid file encryption & entropy elevation (H=7.85) in isolated memory buffer."
+            "details": "Simulated rapid file encryption & entropy elevation (H=7.85) in isolated sandbox buffer."
         }
     elif attack_type_upper == "REVERSE_SHELL" or attack_type_upper == "C2":
+        set_simulated_process_activity(total_cpu=35.0, spawn_rate=4.0, is_tmp=True)
         set_simulated_network_activity(outbound_conns=4, suspicious_port_flag=1, data_exfil_kb_sec=120.0)
         _active_simulation = {
             "type": "Reverse Shell C2 Connection",
@@ -36,13 +38,15 @@ def trigger_attack_simulation(attack_type: str) -> dict:
             "details": "Simulated high throughput (14.5 MB/s) outbound data stream across 18 active sockets."
         }
     elif attack_type_upper == "CRYPTOMINER":
+        # Elevate CPU usage above 95% (98.5%)
+        set_simulated_process_activity(total_cpu=98.5, spawn_rate=14.0, is_tmp=True)
         set_simulated_file_activity(mod_rate=2.0, avg_entropy=4.1, del_rate=0.0)
         set_simulated_network_activity(outbound_conns=2, suspicious_port_flag=1, data_exfil_kb_sec=15.0)
         _active_simulation = {
             "type": "CryptoMiner CPU Hijack",
             "started_at": timestamp,
             "duration": 5.0,
-            "details": "Simulated sustained 96% CPU spike with miner thread pool spawning from /tmp/xmrig."
+            "details": "Simulated sustained 98.5% CPU spike (>95%) with miner thread pool spawning from /tmp/xmrig."
         }
     else:
         return {"success": False, "message": f"Unknown attack simulation type: {attack_type}"}

@@ -44,9 +44,9 @@ export default function AttackSimulator({ onSimulateAttack, activeSim }) {
       id: 'CRYPTOMINER',
       title: 'CryptoMiner CPU Hijack',
       icon: Cpu,
-      description: 'Simulates sustained 96% CPU spike accompanied by rapid thread spawn velocity originating from an xmrig-like background payload.',
-      impact: 'Triggers RULE-MINER-01, flags abnormal processor consumption, predicts CryptoMiner threat category.',
-      buttonText: 'EXECUTE CRYPTOMINER SPIKE'
+      description: 'Simulates sustained 98.5% CPU spike (above 95% threshold) accompanied by rapid thread spawn velocity originating from an xmrig-like background payload.',
+      impact: 'Triggers RULE-MINER-01 (CPU >= 95%), flags critical processor hijack, predicts CryptoMiner threat category.',
+      buttonText: 'EXECUTE CRYPTOMINER SPIKE (>95% CPU)'
     }
   ];
 
@@ -54,8 +54,8 @@ export default function AttackSimulator({ onSimulateAttack, activeSim }) {
     <div className="space-y-6">
       {/* Simulation Info Header */}
       <div className="card-panel p-6">
-        <div className="flex items-center space-x-3.5">
-          <div className="p-3 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+        <div className="flex items-center gap-4">
+          <div className="p-3 rounded-lg bg-slate-900 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
             <Zap className="w-6 h-6 text-amber-400" />
           </div>
           <div>
