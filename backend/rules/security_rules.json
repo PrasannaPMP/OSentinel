@@ -41,10 +41,18 @@
   },
   {
     "id": "RULE-MINER-01",
-    "name": "Abnormal Sustained CPU Spike with Spawn Velocity",
+    "name": "Abnormal Sustained Heavy CPU Spike (AntiGravity / System >= 95%)",
     "category": "CryptoMiner",
     "condition": "cpu_percent >= 95 and spawn_rate >= 5",
     "weight": 60,
-    "description": "Process consuming sustained high CPU capacity above 95% alongside elevated spawn velocity."
+    "description": "Heavy process workload consuming sustained high CPU capacity above 95% threshold alongside elevated spawn velocity."
+  },
+  {
+    "id": "RULE-BROWSER-01",
+    "name": "Browser Excessive CPU Spike (Safari / Chrome >= 70%)",
+    "category": "Browser Cryptojacking",
+    "condition": "cpu_percent >= 70 and spawn_rate >= 2",
+    "weight": 55,
+    "description": "Web browser process (Safari or Chrome) exceeding 70% CPU threshold, indicating possible in-browser cryptominer or runaway script."
   }
 ]

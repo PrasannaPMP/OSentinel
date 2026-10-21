@@ -8,6 +8,9 @@ _last_process_count = 0
 _last_sample_time = time.time()
 _simulated_proc_activity = None
 
+BROWSER_KEYWORDS = ["safari", "chrome", "google chrome", "firefox", "msedge", "brave", "webkit"]
+IDE_KEYWORDS = ["antigravity", "antigravity-ide", "electron", "code", "cursor", "vscode"]
+
 def set_simulated_process_activity(total_cpu: float = 98.4, spawn_rate: float = 12.0, is_tmp: bool = True):
     """Allows safe injection of elevated CPU spikes (>95%) and spawn velocity for threat simulations."""
     global _simulated_proc_activity
@@ -23,6 +26,7 @@ def collect_process_telemetry():
     
     processes = []
     tmp_execution_count = 0
+    browser_high_cpu_count = 0
     total_cpu = 0.0
     total_mem = 0.0
     
@@ -39,6 +43,7 @@ def collect_process_telemetry():
             info = proc.info
             pid = info['pid']
             name = info['name'] or f"proc_{pid}"
+            name_lower = name.lower()
             exe = (info['exe'] or "").replace("\\", "/").lower()
             cpu = info['cpu_percent'] or 0.0
             mem = info['memory_percent'] or 0.0
@@ -60,6 +65,14 @@ def collect_process_telemetry():
             if is_tmp:
                 tmp_execution_count += 1
                 
+            # Differentiate Browser vs Antigravity vs Standard
+            is_browser = any(b in name_lower or b in cmdline_normalized for b in BROWSER_KEYWORDS)
+            is_ide = any(i in name_lower or i in cmdline_normalized for i in IDE_KEYWORDS)
+            
+            # Browser threshold 70%, Antigravity threshold 95%
+            if is_browser and cpu >= 70.0:
+                browser_high_cpu_count += 1
+                
             total_cpu += cpu
             total_mem += mem
             
@@ -72,7 +85,9 @@ def collect_process_telemetry():
                 "cpu_percent": round(cpu, 1),
                 "memory_percent": round(mem, 1),
                 "user": info['username'] or "system",
-                "is_tmp": is_tmp
+                "is_tmp": is_tmp,
+                "is_browser": is_browser,
+                "is_ide": is_ide
             })
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, PermissionError):
             continue
@@ -97,10 +112,12 @@ def collect_process_telemetry():
             "name": "xmrig_crypto_miner",
             "exe": "/tmp/xmrig_miner" if sys.platform != "win32" else "C:/Windows/Temp/xmrig_miner.exe",
             "cmdline": "./xmrig --threads=8 --algo=randomx --cpu-priority=5",
-            "cpu_percent": round(sim_cpu * 0.96, 1), # e.g. 96.2%
+            "cpu_percent": round(sim_cpu * 0.96, 1),
             "memory_percent": 18.5,
             "user": "threat_actor",
-            "is_tmp": True
+            "is_tmp": True,
+            "is_browser": False,
+            "is_ide": False
         })
     
     # Sort top processes by CPU usage
@@ -110,6 +127,7 @@ def collect_process_telemetry():
         "process_count": current_count + (1 if is_sim_active else 0),
         "processes": processes[:40],
         "tmp_execution_count": tmp_execution_count,
+        "browser_high_cpu_count": browser_high_cpu_count,
         "avg_cpu_percent": round(total_cpu / max(1, current_count), 2),
         "total_cpu_percent": round(total_cpu, 1),
         "spawn_rate": round(spawn_velocity, 2)

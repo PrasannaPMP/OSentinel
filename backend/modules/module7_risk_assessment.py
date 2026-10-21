@@ -20,6 +20,9 @@ PROTECTED_PROCESS_NAMES = {
     "svchost.exe", "kernel_task", "docker", "dockerd", "git"
 }
 
+BROWSER_KEYWORDS = ["safari", "chrome", "google chrome", "firefox", "msedge", "brave", "webkit"]
+IDE_KEYWORDS = ["antigravity", "antigravity-ide", "electron", "code", "cursor", "vscode"]
+
 def calculate_risk_score(rule_result: dict, ml_result: dict) -> dict:
     rule_score = float(rule_result.get("rule_score", 0.0))
     anomaly_score = float(ml_result.get("anomaly_score", 0.0))
@@ -66,7 +69,6 @@ def is_protected_process(pid: int, process_name: str) -> bool:
         if protected in name_clean:
             return True
             
-    # Also inspect command line of PID if accessible
     try:
         if psutil.pid_exists(pid):
             p = psutil.Process(pid)
@@ -79,16 +81,37 @@ def is_protected_process(pid: int, process_name: str) -> bool:
         
     return False
 
-def terminate_process_safe(pid: int, process_name: str, is_tmp: bool, cpu_percent: float) -> dict:
+def is_browser_process(process_name: str, cmdline: str = "") -> bool:
+    name_clean = (process_name or "").lower() + " " + (cmdline or "").lower()
+    return any(b in name_clean for b in BROWSER_KEYWORDS)
+
+def is_ide_process(process_name: str, cmdline: str = "") -> bool:
+    name_clean = (process_name or "").lower() + " " + (cmdline or "").lower()
+    return any(ide in name_clean for ide in IDE_KEYWORDS)
+
+def terminate_process_safe(pid: int, process_name: str, is_tmp: bool, cpu_percent: float, cmdline: str = "") -> dict:
     """Attempts process termination safely with strict threshold & whitelist checks."""
-    # 1. Protect system and developer processes (Antigravity IDE, Node, Python, VSCode, etc.)
-    if is_protected_process(pid, process_name):
+    # 1. Protect AntiGravity IDE and core developer environments (Threshold >= 95%, never terminate)
+    if is_ide_process(process_name, cmdline) or is_protected_process(pid, process_name):
         return {
             "success": False,
-            "message": f"Protected process {process_name} (PID {pid}) shielded from automated termination."
+            "message": f"AntiGravity IDE / Protected Process {process_name} (PID {pid}) shielded (Threshold >= 95% CPU, automated termination blocked)."
         }
         
-    # 2. Only allow termination if verified as a rogue payload (spawning from temp OR CPU >= 95%)
+    # 2. Browser process (Safari, Chrome) threshold is 70% as it was
+    if is_browser_process(process_name, cmdline):
+        if cpu_percent < 70.0:
+            return {
+                "success": False,
+                "message": f"Browser process {process_name} (PID {pid}) within normal limits (CPU {cpu_percent}% < 70% threshold)."
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Browser process {process_name} (PID {pid}) exceeded 70% CPU threshold. Flagged for alert monitoring without forced termination."
+            }
+        
+    # 3. Only allow termination if verified as a rogue payload (spawning from temp OR CPU >= 95%)
     if not is_tmp and cpu_percent < 95.0:
         return {
             "success": False,
@@ -115,11 +138,14 @@ def triage_and_respond(proc_telemetry: dict, file_telemetry: dict, net_telemetry
     
     triggered_rules = rule_result.get("triggered_rules", [])
     
-    # Find genuine threat candidate: first prioritize any process marked as is_tmp or with CPU >= 95%
+    # Prioritize any process marked as is_tmp or with CPU >= 95%
     processes = proc_telemetry.get("processes", [])
     rogue_proc = next((p for p in processes if p.get("is_tmp") and p.get("cpu_percent", 0) >= 95.0), None)
     if not rogue_proc:
         rogue_proc = next((p for p in processes if p.get("is_tmp")), None)
+    if not rogue_proc:
+        # Check browsers exceeding 70%
+        rogue_proc = next((p for p in processes if is_browser_process(p.get("name", "")) and p.get("cpu_percent", 0) >= 70.0), None)
     if not rogue_proc:
         # Fallback to top process only if not protected
         rogue_proc = next((p for p in processes if not is_protected_process(p.get("pid", 0), p.get("name", ""))), {})
@@ -128,6 +154,7 @@ def triage_and_respond(proc_telemetry: dict, file_telemetry: dict, net_telemetry
     target_name = rogue_proc.get("name", "unknown_process")
     is_tmp = rogue_proc.get("is_tmp", False)
     cpu_percent = rogue_proc.get("cpu_percent", 0.0)
+    cmdline = rogue_proc.get("cmdline", "")
     
     response_action = "LOG"
     incident_id = None
@@ -170,8 +197,8 @@ def triage_and_respond(proc_telemetry: dict, file_telemetry: dict, net_telemetry
             "network_activity": net_telemetry
         }
         
-        # Safe containment attempt with strict Antigravity / IDE protection and CPU >= 95% check
-        contain_result = terminate_process_safe(target_pid, target_name, is_tmp, cpu_percent)
+        # Safe containment attempt with AntiGravity (>=95%) and Browser (70%) thresholds
+        contain_result = terminate_process_safe(target_pid, target_name, is_tmp, cpu_percent, cmdline)
         if contain_result["success"]:
             contain_action_str = f"PROCESS_KILL (PID {target_pid})"
         else:
