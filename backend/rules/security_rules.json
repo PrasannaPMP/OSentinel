@@ -1,0 +1,50 @@
+[
+  {
+    "id": "RULE-RANSOMWARE-01",
+    "name": "High File Modification Rate with High Shannon Entropy",
+    "category": "Ransomware",
+    "condition": "file_mod_rate >= 15 and avg_file_entropy >= 7.2",
+    "weight": 85,
+    "description": "Rapid file encryption activity detected! File write rate exceeded threshold with high entropy payload."
+  },
+  {
+    "id": "RULE-RANSOMWARE-02",
+    "name": "Mass File Deletion Burst",
+    "category": "Ransomware",
+    "condition": "file_deletion_rate >= 10",
+    "weight": 70,
+    "description": "Mass file deletion burst detected across active user directory."
+  },
+  {
+    "id": "RULE-C2-SHELL-01",
+    "name": "Suspicious Port Active Connection",
+    "category": "Reverse Shell C2",
+    "condition": "suspicious_port_flag == 1",
+    "weight": 80,
+    "description": "Active connection established to known command-and-control threat port (e.g., 4444, 1337, 31337)."
+  },
+  {
+    "id": "RULE-EXEC-01",
+    "name": "Executable Spawned from Temporary Directory",
+    "category": "Malicious Execution",
+    "condition": "is_tmp_execution == 1",
+    "weight": 65,
+    "description": "Process binary launched from temporary or scratch directory (/tmp or /var/tmp)."
+  },
+  {
+    "id": "RULE-EXFIL-01",
+    "name": "High Volume Data Exfiltration Burst",
+    "category": "Data Exfiltration",
+    "condition": "data_exfil_kb_sec >= 1024 and outbound_conn_count >= 5",
+    "weight": 75,
+    "description": "High throughput outbound data exfiltration over multiple active sockets."
+  },
+  {
+    "id": "RULE-MINER-01",
+    "name": "Abnormal Sustained CPU Spike with Spawn Velocity",
+    "category": "CryptoMiner",
+    "condition": "cpu_percent >= 85 and spawn_rate >= 5",
+    "weight": 60,
+    "description": "Process consuming sustained high CPU capacity alongside elevated spawn velocity."
+  }
+]

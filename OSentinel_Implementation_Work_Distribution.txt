@@ -1,0 +1,325 @@
+================================================================================
+          OSENTINEL: IMPLEMENTATION & WORK DISTRIBUTION PLAN
+================================================================================
+
+EXECUTIVE SUMMARY & PROJECT OVERVIEW
+--------------------------------------------------------------------------------
+OSentinel is an intelligent, host-based security framework developed for Ubuntu
+Linux. It combines heuristic rule-based detection with a 2-stage machine learning
+pipeline to detect, classify, and mitigate both known security threats and unknown
+zero-day anomalies in real time.
+
+The system continuously monitors three critical operating system vectors:
+1. Process Activity (CPU, memory, execution paths, process trees)
+2. File System Operations (file modification rates, Shannon entropy calculation)
+3. Network Connections (socket states, IP/port bindings, byte transfer rates)
+
+To ensure clear ownership, scalable development, and modularity, the entire
+implementation of OSentinel has been divided among three team members:
+
++-------------------------+------------------+----------------------------------+
+| Team Member             | Registration No. | Core Responsibility & Role       |
++-------------------------+------------------+----------------------------------+
+| Medarametla Likhith     | 24BYB0054        | Telemetry Collection, Feature    |
+|                         |                  | Extraction & Rule Engine Lead    |
+| Kurra Leela Krishna     | 24BYB0004        | Machine Learning Pipeline, Risk  |
+|                         |                  | Engine & Attack Simulator Lead   |
+| Prasanna Manikandan     | 24BYB0060        | Backend Infrastructure, DB,      |
+|                         |                  | WebSockets & SOC Dashboard Lead  |
++-------------------------+------------------+----------------------------------+
+
+
+================================================================================
+OVERALL SYSTEM ARCHITECTURE & PROCESS WORKFLOW DIAGRAMS
+================================================================================
+
+DIAGRAM 1: HIGH-LEVEL END-TO-END SYSTEM ARCHITECTURE
+--------------------------------------------------------------------------------
+
+ +----------------------------------------------------------------------------+
+ |                      HOST OS MONITORING LAYER (Likhith)                    |
+ |  +--------------------+   +-----------------------+   +-----------------+  |
+ |  | Module 1: Process  |   | Module 2: File System |   | Module 3: Net   |  |
+ |  | Collector (psutil) |   | & Entropy (watchdog)  |   | Traffic (netstat|  |
+ |  +--------------------+   +-----------------------+   +-----------------+  |
+ +----------------------------------------------------------------------------+
+            |                            |                        |
+            +----------------------------+------------------------+
+                                         |
+                                         v
+ +----------------------------------------------------------------------------+
+ |                   PREPROCESSING & HEURISTICS LAYER (Likhith)               |
+ |  +--------------------------------+   +---------------------------------+  |
+ |  | Module 4: Feature Extraction   |-->| Module 5: Heuristic & Signature |  |
+ |  | Engine (8D Vectorizer)         |   | Rule Engine                     |  |
+ |  +--------------------------------+   +---------------------------------+  |
+ +----------------------------------------------------------------------------+
+            |                                             | (Rule Score)
+            v                                             v
+ +----------------------------------------------------------------------------+
+ |                  INTELLIGENCE & RISK LAYER (Leela Krishna)                 |
+ |  +---------------------------------+   +--------------------------------+  |
+ |  | Stage 1: Isolation Forest       |-->| Stage 2: Random Forest         |  |
+ |  | (Unsupervised Anomaly Detection)|   | (Supervised Threat Classifier) |  |
+ |  +---------------------------------+   +--------------------------------+  |
+ |                                                         | (ML Score)       |
+ |                                                         v                  |
+ |  +----------------------------------------------------------------------+  |
+ |  | Module 7: Dynamic Risk Assessment & Automated Action Engine          |  |
+ |  +----------------------------------------------------------------------+  |
+ |                                     ^                                      |
+ |  +----------------------------------|-----------------------------------+  |
+ |  | Attack Simulator (Ransomware / Exfiltration / Stress Simulations)   |  |
+ |  +----------------------------------------------------------------------+  |
+ +----------------------------------------------------------------------------+
+                                       |
+                                       v
+ +----------------------------------------------------------------------------+
+ |                  INFRASTRUCTURE & API LAYER (Prasanna)                     |
+ |  +-----------------------+   +------------------+   +-------------------+  |
+ |  | SQLite Database       |-->| FastAPI Server   |-->| Async WebSocket   |  |
+ |  | (osentinel.db)        |   | (REST APIs)      |   | Telemetry Stream  |  |
+ |  +-----------------------+   +------------------+   +-------------------+  |
+ +----------------------------------------------------------------------------+
+                                                               |
+                                                               v
+ +----------------------------------------------------------------------------+
+ |                      SOC DASHBOARD LAYER (Prasanna)                        |
+ |  +----------------------------------------------------------------------+  |
+ |  | React / Vite SOC Dashboard UI                                        |  |
+ |  | - Risk Overview Gauge & Breakdown  - Process & File Monitors           |  |
+ |  | - ML Metrics & Confusion Matrix    - Incident Triage & Attack Controls |  |
+ |  +----------------------------------------------------------------------+  |
+ +----------------------------------------------------------------------------+
+
+
+DIAGRAM 2: DATA FLOW & TELEMETRY PROCESSING LIFECYCLE
+--------------------------------------------------------------------------------
+
+ [Ubuntu Host Events]
+         |
+         | (1. Raw Process, File & Network Events)
+         v
+ [Member 1: Telemetry & Rules]
+         | -- (Computes Shannon Entropy & Write Rates)
+         | -- (Constructs 8D Feature Vector & Evaluates Rules)
+         |
+         | (2. 8D Vector & Rule Scores)
+         v
+ [Member 2: ML & Risk Engine]
+         | -- (Executes Isolation Forest -> Anomaly Score)
+         | -- (Executes Random Forest -> Classifies Threat Category)
+         | -- (Calculates Composite Risk Score 0-100)
+         |
+         +--> [If Risk >= 70: Triggers Automated Containment on Host]
+         |
+         | (3. Telemetry, Risk Score & Alerts Payload)
+         v
+ [Member 3: FastAPI / WebSockets / SQLite DB]
+         | -- (Persists Telemetry & Alerts to SQLite Database)
+         | -- (Broadcasts JSON Payload via Async WebSocket)
+         |
+         v
+ [Member 3: React SOC Dashboard UI]
+         | -- (Updates Dynamic Risk Gauge, Resource Graphs & Incident Logs)
+
+
+DIAGRAM 3: 2-STAGE MACHINE LEARNING PIPELINE WORKFLOW
+--------------------------------------------------------------------------------
+
+  +-------------------------------------------------------------------------+
+  | INPUT: 8D Feature Vector                                                |
+  | [CPU%, Mem%, FileWriteRate, Entropy, NetConns, OutBytes, Auth, Proc]    |
+  +-------------------------------------------------------------------------+
+                                       |
+                                       v
+  +-------------------------------------------------------------------------+
+  | STAGE 1: UNSUPERVISED ANOMALY DETECTION (Isolation Forest)              |
+  | Evaluates structural isolation depth of incoming telemetry vector       |
+  +-------------------------------------------------------------------------+
+                                       |
+                     +-----------------+-----------------+
+                     |                                   |
+             [Anomaly Detected]                  [Normal Behavior]
+                     |                                   |
+                     v                                   v
+  +------------------------------------+   +--------------------------------+
+  | STAGE 2: SUPERVISED CLASSIFICATION |   | Flag as Benign Activity        |
+  | (Random Forest Classifier)         |   | Anomaly Score: Low (0-20)     |
+  +------------------------------------+   +--------------------------------+
+                     |
+        +------------+------------+
+        |            |            |
+        v            v            v
+  [Ransomware] [Exfiltration] [Privilege Esc]
+        |            |            |
+        +------------+------------+
+                     |
+                     v
+  +-------------------------------------------------------------------------+
+  | OUTPUT TO RISK ENGINE                                                   |
+  | Anomaly Severity Score + Classified Threat Type + Probability           |
+  +-------------------------------------------------------------------------+
+
+
+DIAGRAM 4: COMPOSITE RISK ASSESSMENT & ACTION DECISION MATRIX
+--------------------------------------------------------------------------------
+
+  Rule Engine Score (0-100)  ----->  [ Composite Risk Formula ]
+  ML Anomaly Score  (0-100)  ----->  [ Score = 0.45*Rule + 0.55*ML ]
+                                                  |
+                                                  v
+                              +---------------------------------------+
+                              |      Evaluate Composite Risk Score    |
+                              +---------------------------------------+
+                                  |         |           |         |
+           +----------------------+         |           |         +-----------------------+
+           |                                |           |                                 |
+           v                                v           v                                 v
+   [ 0 - 39: LOW ]                 [ 40 - 69: MED ]  [ 70 - 89: HIGH ]             [ 90 - 100: CRITICAL ]
+   Log event to database           Raise Incident    Raise Alert +                 Immediate Process
+   No intervention                 Alert on Dashboard Suspend Process (SIGSTOP)    Kill + Net Isolation
+
+
+================================================================================
+DETAILED MEMBER-WISE TECHNICAL BREAKDOWN
+================================================================================
+
+--------------------------------------------------------------------------------
+1. MEDARAMETLA LIKHITH (24BYB0054)
+   Role: Telemetry Collection, Feature Extraction & Heuristic Rule Engine Lead
+--------------------------------------------------------------------------------
+
+A. ASSIGNED RESPONSIBILITIES:
+   - Designing and implementing continuous probes across host processes, file
+     systems, and network sockets.
+   - Developing mathematical feature extraction functions (such as Shannon Entropy
+     for ransomware detection).
+   - Normalizing telemetry data into a standardized 8-dimensional feature vector.
+   - Building the heuristic rule engine and JSON rule database for signature detection.
+
+B. MODULES & FILES IMPLEMENTED:
+   1. backend/modules/module1_process.py  (Process Collector)
+   2. backend/modules/module2_file.py     (File System & Entropy Monitor)
+   3. backend/modules/module3_network.py  (Network Connection & Traffic Monitor)
+   4. backend/modules/module4_feature_extraction.py (8D Feature Vectorizer)
+   5. backend/modules/module5_rule_engine.py (Heuristic & Signature Rule Engine)
+   6. backend/rules/security_rules.json  (Rule Database Config)
+
+C. KEY TECHNICAL IMPLEMENTATIONS:
+   * Process Telemetry: Uses `psutil` to sample process tables every second,
+     capturing PID, process name, CPU %, Memory %, user context, parent PID,
+     and command line arguments.
+   * File Entropy & Ransomware Probe: Uses `watchdog` to monitor write/create/delete
+     events in target directories. Implements Shannon Entropy formula:
+       H(X) = - SUM( P(x_i) * log2(P(x_i)) )
+     Files with H(X) > 7.2 undergoing rapid modifications trigger instant ransomware flags.
+   * Network Connection Probe: Captures active socket connections (`psutil.net_connections`),
+     tracking foreign IP addresses, port numbers, connection states, and byte transfer rates.
+   * 8D Feature Vectorizer: Aggregates raw metrics into a standardized array:
+     [cpu_usage, memory_usage, file_write_rate, avg_file_entropy,
+      network_conn_count, outbound_byte_rate, failed_auth_count, unusual_proc_count]
+   * Heuristic Rule Engine: Matches telemetry against signature rules (mass file edits,
+     suspicious listening ports like 4444, CPU spikes combined with high write rates).
+
+
+--------------------------------------------------------------------------------
+2. KURRA LEELA KRISHNA (24BYB0004)
+   Role: Machine Learning Pipeline, Risk Assessment Engine & Threat Simulator Lead
+--------------------------------------------------------------------------------
+
+A. ASSIGNED RESPONSIBILITIES:
+   - Developing the 2-stage machine learning pipeline (Isolation Forest + Random Forest).
+   - Creating synthetic training datasets with class balancing (SMOTE concepts).
+   - Implementing model training, evaluation, and serialization (.joblib).
+   - Designing the dynamic composite risk scoring formula and automated response triggers.
+   - Building the controlled threat simulation suite for live security testing.
+
+B. MODULES & FILES IMPLEMENTED:
+   1. backend/modules/module6_ml_engine.py (2-Stage ML Detection Engine)
+   2. backend/modules/train_models.py (Dataset Synthesizer & ML Trainer)
+   3. backend/modules/module7_risk_assessment.py (Risk Scoring & Containment Engine)
+   4. backend/modules/attack_simulator.py (Safe Threat Simulator Suite)
+   5. backend/models/*.joblib (Pre-trained ML Model Artifacts)
+
+C. KEY TECHNICAL IMPLEMENTATIONS:
+   * Stage 1 Anomaly Detection: Uses Isolation Forest trained on normal host behavior
+     to isolate zero-day anomalies without needing explicit attack labels.
+   * Stage 2 Threat Classification: Uses Random Forest Classifier to categorize
+     anomalies into: Ransomware, Data Exfiltration, Privilege Escalation, or Benign.
+   * Dataset & Training Pipeline: Generates balanced synthetic telemetry datasets using
+     SMOTE principles and serializes trained models to disk.
+   * Dynamic Risk Scoring: Computes composite risk score:
+       Composite Risk = (0.45 * Rule Score) + (0.55 * ML Score)
+     If score >= 70, executes automated process containment (SIGSTOP/SIGKILL).
+   * Controlled Attack Simulator: Executes safe, reversible attack routines:
+     - Ransomware: Writes high-entropy encrypted blocks to /tmp/osentinel_sim/
+     - Exfiltration: Triggers socket connection bursts
+     - CPU Stress: Spawns high-utilization threads.
+
+
+--------------------------------------------------------------------------------
+3. PRASANNA MANIKANDAN (24BYB0060)
+   Role: Backend Infrastructure, Database, WebSockets & SOC Dashboard Lead
+--------------------------------------------------------------------------------
+
+A. ASSIGNED RESPONSIBILITIES:
+   - Designing the SQLite database schema and ORM persistence layer.
+   - Developing the FastAPI web server, CORS middleware, and RESTful API endpoints.
+   - Building the real-time asynchronous WebSocket streaming server.
+   - Creating the modern React/Vite SOC Dashboard UI with dark mode glassmorphism.
+   - Building UI components for risk gauges, process/file/network monitors, ML metrics,
+     incident triage, and attack simulation.
+
+B. MODULES & FILES IMPLEMENTED:
+   1. backend/database.py (SQLite DB Schema & Storage Layer)
+   2. backend/main.py (FastAPI Server, REST APIs & WebSocket Broadcaster)
+   3. backend/config.py (System Configuration & Global Thresholds)
+   4. frontend/src/App.jsx & main.jsx (React Entry Point & Layout)
+   5. frontend/src/index.css (Glassmorphism Styling System)
+   6. frontend/src/services/api.js (REST Client & WebSocket Manager)
+   7. frontend/src/components/*.jsx (9 SOC Dashboard Components)
+
+C. KEY TECHNICAL IMPLEMENTATIONS:
+   * SQLite Storage Layer: Configures indexed tables (process_logs, file_events,
+     network_logs, security_alerts, ml_metrics, incidents) for fast retrieval.
+   * FastAPI & WebSockets: Implements RESTful endpoints for metrics, alerts, incident updates,
+     and simulation controls. Streams live telemetry every second via WebSockets.
+   * SOC Dashboard UI:
+     - Risk Overview Gauge: Dynamic SVG radial gauge visualizing risk score (0-100).
+     - Process / File / Network Monitors: Interactive data tables and real-time graphs.
+     - ML Metrics Panel: Renders accuracy, confusion matrix, and feature importance charts.
+     - Incident Triage Center: Severity filtering (CRITICAL, HIGH, MED, LOW) & investigation drawer.
+     - Attack Simulator UI: Trigger live attack simulations with instant visual feedback.
+
+
+================================================================================
+COMPLETE PROJECT FILE OWNERSHIP CHECKLIST
+================================================================================
+
+File Path                                       Responsible Member
+--------------------------------------------------------------------------------
+backend/modules/module1_process.py             Medarametla Likhith (24BYB0054)
+backend/modules/module2_file.py                Medarametla Likhith (24BYB0054)
+backend/modules/module3_network.py             Medarametla Likhith (24BYB0054)
+backend/modules/module4_feature_extraction.py  Medarametla Likhith (24BYB0054)
+backend/modules/module5_rule_engine.py         Medarametla Likhith (24BYB0054)
+backend/rules/security_rules.json              Medarametla Likhith (24BYB0054)
+
+backend/modules/module6_ml_engine.py           Kurra Leela Krishna (24BYB0004)
+backend/modules/train_models.py                Kurra Leela Krishna (24BYB0004)
+backend/modules/module7_risk_assessment.py     Kurra Leela Krishna (24BYB0004)
+backend/modules/attack_simulator.py            Kurra Leela Krishna (24BYB0004)
+backend/models/*.joblib                        Kurra Leela Krishna (24BYB0004)
+
+backend/database.py                            Prasanna Manikandan (24BYB0060)
+backend/main.py                                Prasanna Manikandan (24BYB0060)
+backend/config.py                              Prasanna Manikandan (24BYB0060)
+frontend/src/App.jsx & main.jsx                Prasanna Manikandan (24BYB0060)
+frontend/src/index.css                         Prasanna Manikandan (24BYB0060)
+frontend/src/services/api.js                   Prasanna Manikandan (24BYB0060)
+frontend/src/components/*.jsx                  Prasanna Manikandan (24BYB0060)
+
+================================================================================
+Document prepared for project review and work distribution verification.
+================================================================================
