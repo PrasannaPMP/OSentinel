@@ -11,17 +11,34 @@ from backend.config import (
 )
 from backend.database import create_alert, create_incident, log_event
 
-# Whitelist of developer environments, IDEs, shells, and critical system binaries
-# that MUST NEVER be terminated automatically
-PROTECTED_PROCESS_NAMES = {
+# Whitelist: AntiGravity is the SOLE EXCEPTION permitted to run continuously,
+# perform rapid multiple edits on file save, and use high CPU without restriction.
+IDE_KEYWORDS = [
     "antigravity", "antigravity-ide", "electron", "code", "cursor", "vscode",
-    "python", "python3", "uvicorn", "node", "npm", "vite", "zsh", "bash", "sh",
-    "terminal", "iterm2", "windowserver", "launchd", "systemd", "explorer.exe",
-    "svchost.exe", "kernel_task", "docker", "dockerd", "git"
-}
+    "language_server", "python3", "python", "uvicorn", "vite", "node"
+]
 
 BROWSER_KEYWORDS = ["safari", "chrome", "google chrome", "firefox", "msedge", "brave", "webkit"]
-IDE_KEYWORDS = ["antigravity", "antigravity-ide", "electron", "code", "cursor", "vscode"]
+
+def is_ide_process(process_name: str, cmdline: str = "") -> bool:
+    """Identifies AntiGravity IDE and core developer processes - the SOLE PERMITTED EXCEPTION."""
+    name_clean = (process_name or "").lower() + " " + (cmdline or "").lower()
+    return any(ide in name_clean for ide in IDE_KEYWORDS)
+
+def is_browser_process(process_name: str, cmdline: str = "") -> bool:
+    name_clean = (process_name or "").lower() + " " + (cmdline or "").lower()
+    return any(b in name_clean for b in BROWSER_KEYWORDS)
+
+def is_protected_system_process(pid: int, process_name: str) -> bool:
+    """Prevents crashing kernel or OS core."""
+    if pid <= 100: # Kernel/launchd/systemd
+        return True
+    current_pid = os.getpid()
+    parent_pid = os.getppid()
+    if pid in (current_pid, parent_pid):
+        return True
+    name_clean = (process_name or "").lower()
+    return name_clean in ["kernel_task", "launchd", "systemd", "windowserver"]
 
 def calculate_risk_score(rule_result: dict, ml_result: dict) -> dict:
     rule_score = float(rule_result.get("rule_score", 0.0))
@@ -30,13 +47,11 @@ def calculate_risk_score(rule_result: dict, ml_result: dict) -> dict:
     threat_category = ml_result.get("predicted_category", "Normal")
     confidence = float(ml_result.get("confidence", 0.0))
     
-    # ML threat score component is 0 if Normal, else confidence * 100
     classifier_score = (confidence * 100.0) if threat_category != "Normal" else 0.0
     
     raw_risk = (WEIGHT_RULE * rule_score) + (WEIGHT_ANOMALY * anomaly_score) + (WEIGHT_CLASSIFIER * classifier_score)
     final_risk_score = min(100.0, max(0.0, raw_risk))
     
-    # Determine Severity Level
     if final_risk_score >= RISK_THRESHOLD_HIGH:
         severity = "HIGH"
     elif final_risk_score >= RISK_THRESHOLD_LOW:
@@ -55,79 +70,48 @@ def calculate_risk_score(rule_result: dict, ml_result: dict) -> dict:
         }
     }
 
-def is_protected_process(pid: int, process_name: str) -> bool:
-    """Checks if a process is part of the IDE, system, or development environment."""
-    if pid <= 1000:
-        return True
-    current_pid = os.getpid()
-    parent_pid = os.getppid()
-    if pid in (current_pid, parent_pid):
-        return True
-        
-    name_clean = (process_name or "").lower().strip()
-    for protected in PROTECTED_PROCESS_NAMES:
-        if protected in name_clean:
-            return True
-            
-    try:
-        if psutil.pid_exists(pid):
-            p = psutil.Process(pid)
-            cmd = " ".join(p.cmdline()).lower()
-            for protected in PROTECTED_PROCESS_NAMES:
-                if protected in cmd:
-                    return True
-    except Exception:
-        pass
-        
-    return False
-
-def is_browser_process(process_name: str, cmdline: str = "") -> bool:
-    name_clean = (process_name or "").lower() + " " + (cmdline or "").lower()
-    return any(b in name_clean for b in BROWSER_KEYWORDS)
-
-def is_ide_process(process_name: str, cmdline: str = "") -> bool:
-    name_clean = (process_name or "").lower() + " " + (cmdline or "").lower()
-    return any(ide in name_clean for ide in IDE_KEYWORDS)
-
-def terminate_process_safe(pid: int, process_name: str, is_tmp: bool, cpu_percent: float, cmdline: str = "") -> dict:
-    """Attempts process termination safely with strict threshold & whitelist checks."""
-    # 1. Protect AntiGravity IDE and core developer environments (Threshold >= 95%, never terminate)
-    if is_ide_process(process_name, cmdline) or is_protected_process(pid, process_name):
+def terminate_process_safe(
+    pid: int,
+    process_name: str,
+    is_tmp: bool = False,
+    cpu_percent: float = 0.0,
+    cmdline: str = "",
+    force: bool = False
+) -> dict:
+    """
+    Terminates rogue processes with notifications while protecting AntiGravity.
+    AntiGravity is the ONLY process allowed to run indefinitely and edit files.
+    """
+    # 1. AntiGravity Exemption Check - NEVER terminate AntiGravity
+    if is_ide_process(process_name, cmdline):
         return {
             "success": False,
-            "message": f"AntiGravity IDE / Protected Process {process_name} (PID {pid}) shielded (Threshold >= 95% CPU, automated termination blocked)."
+            "message": f"AntiGravity IDE ({process_name}, PID {pid}) is exempted from termination (sole permitted exception)."
         }
         
-    # 2. Browser process (Safari, Chrome) threshold is 70% as it was
-    if is_browser_process(process_name, cmdline):
-        if cpu_percent < 70.0:
-            return {
-                "success": False,
-                "message": f"Browser process {process_name} (PID {pid}) within normal limits (CPU {cpu_percent}% < 70% threshold)."
-            }
-        else:
-            return {
-                "success": False,
-                "message": f"Browser process {process_name} (PID {pid}) exceeded 70% CPU threshold. Flagged for alert monitoring without forced termination."
-            }
-        
-    # 3. Only allow termination if verified as a rogue payload (spawning from temp OR CPU >= 95%)
-    if not is_tmp and cpu_percent < 95.0:
+    if is_protected_system_process(pid, process_name):
         return {
             "success": False,
-            "message": f"Process {process_name} (PID {pid}) does not meet rogue containment criteria (CPU {cpu_percent}% < 95% and not temp execution)."
+            "message": f"System core process {process_name} (PID {pid}) cannot be terminated."
         }
         
+    # 2. Terminate the process (via terminate or kill)
     try:
         if psutil.pid_exists(pid):
             p = psutil.Process(pid)
             p.terminate()
-            p.wait(timeout=2)
-            return {"success": True, "message": f"Rogue threat process {process_name} (PID {pid}) contained and terminated."}
+            try:
+                p.wait(timeout=1.5)
+            except psutil.TimeoutExpired:
+                p.kill() # Force kill if unresponsive
+            return {
+                "success": True,
+                "message": f"Successfully killed unwanted/rogue process: {process_name} (PID {pid})"
+            }
         else:
-            return {"success": True, "message": f"Process PID {pid} already exited."}
+            return {"success": True, "message": f"Process PID {pid} already stopped."}
     except (psutil.AccessDenied, PermissionError):
-        return {"success": False, "message": f"Permission denied terminating PID {pid}. Logged to incident evidence."}
+        return {"success": False, "message": f"Permission denied terminating PID {pid}."}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -137,82 +121,119 @@ def triage_and_respond(proc_telemetry: dict, file_telemetry: dict, net_telemetry
     threat_cat = risk_assessment["threat_category"]
     
     triggered_rules = rule_result.get("triggered_rules", [])
-    
-    # Prioritize any process marked as is_tmp or with CPU >= 95%
     processes = proc_telemetry.get("processes", [])
-    rogue_proc = next((p for p in processes if p.get("is_tmp") and p.get("cpu_percent", 0) >= 95.0), None)
-    if not rogue_proc:
-        rogue_proc = next((p for p in processes if p.get("is_tmp")), None)
-    if not rogue_proc:
-        # Check browsers exceeding 70%
-        rogue_proc = next((p for p in processes if is_browser_process(p.get("name", "")) and p.get("cpu_percent", 0) >= 70.0), None)
-    if not rogue_proc:
-        # Fallback to top process only if not protected
-        rogue_proc = next((p for p in processes if not is_protected_process(p.get("pid", 0), p.get("name", ""))), {})
-        
-    target_pid = rogue_proc.get("pid", 0)
-    target_name = rogue_proc.get("name", "unknown_process")
-    is_tmp = rogue_proc.get("is_tmp", False)
-    cpu_percent = rogue_proc.get("cpu_percent", 0.0)
-    cmdline = rogue_proc.get("cmdline", "")
     
-    response_action = "LOG"
+    terminated_processes = []
+    
+    # -------------------------------------------------------------------------
+    # RULE A: Multiple Runaway Tabs / Runaway Browser Processes (Threshold 70%)
+    # -------------------------------------------------------------------------
+    # If a browser tab or runaway process exceeds 70% CPU, kill it with notification
+    for p in processes:
+        p_name = p.get("name", "")
+        p_cmd = p.get("cmdline", "")
+        p_cpu = p.get("cpu_percent", 0.0)
+        p_pid = p.get("pid", 0)
+        
+        if is_browser_process(p_name, p_cmd) and p_cpu >= 70.0 and not is_ide_process(p_name, p_cmd):
+            kill_res = terminate_process_safe(p_pid, p_name, cpu_percent=p_cpu, cmdline=p_cmd, force=True)
+            if kill_res["success"]:
+                terminated_processes.append(f"Browser Tab/Process (PID {p_pid})")
+                create_alert(
+                    severity="HIGH",
+                    title=f"Runaway Browser Tab Killed (PID {p_pid})",
+                    description=f"Browser process '{p_name}' exceeded 70% CPU threshold ({p_cpu}%). Terminated to free host resources.",
+                    risk_score=75.0,
+                    triggered_rules=["RULE-BROWSER-01"],
+                    threat_category="Browser Cryptojacking"
+                )
+
+    # -------------------------------------------------------------------------
+    # RULE B: Rapid Multiple Edits on File Save (Ransomware / Rogue File Writers)
+    # AntiGravity is the SOLE EXCEPTION permitted to perform multiple file edits.
+    # -------------------------------------------------------------------------
+    is_rapid_file_edits = (file_telemetry.get("file_mod_rate", 0) >= 15.0 or file_telemetry.get("high_entropy_alert", False))
+    if is_rapid_file_edits:
+        # Identify writer process
+        for p in processes:
+            p_name = p.get("name", "")
+            p_cmd = p.get("cmdline", "")
+            p_pid = p.get("pid", 0)
+            
+            # If process is NOT AntiGravity and is active or tmp
+            if not is_ide_process(p_name, p_cmd) and (p.get("is_tmp") or p.get("cpu_percent", 0) > 10.0):
+                kill_res = terminate_process_safe(p_pid, p_name, force=True)
+                if kill_res["success"]:
+                    terminated_processes.append(f"Rogue File Writer (PID {p_pid})")
+                    create_alert(
+                        severity="HIGH",
+                        title=f"Rogue Process Killed: Rapid File Modification (PID {p_pid})",
+                        description=f"Process '{p_name}' was actively modifying files at high velocity. AntiGravity is the only allowed exception. Process terminated.",
+                        risk_score=85.0,
+                        triggered_rules=["RULE-RANSOMWARE-01"],
+                        threat_category="Ransomware"
+                    )
+                break
+
+    # -------------------------------------------------------------------------
+    # RULE C: Unwanted Dependencies & Rogue Background Workers
+    # (Temporary path execution, unapproved miners, rogue sockets)
+    # -------------------------------------------------------------------------
+    for p in processes:
+        p_name = p.get("name", "")
+        p_cmd = p.get("cmdline", "")
+        p_pid = p.get("pid", 0)
+        p_cpu = p.get("cpu_percent", 0.0)
+        
+        # If running from temp or matching miner signatures, and NOT AntiGravity
+        if p.get("is_tmp") and not is_ide_process(p_name, p_cmd):
+            kill_res = terminate_process_safe(p_pid, p_name, is_tmp=True, cpu_percent=p_cpu, cmdline=p_cmd, force=True)
+            if kill_res["success"]:
+                terminated_processes.append(f"Rogue Worker '{p_name}' (PID {p_pid})")
+                create_alert(
+                    severity="HIGH",
+                    title=f"Unwanted Rogue Dependency Terminated (PID {p_pid})",
+                    description=f"Process '{p_name}' launched from unauthorized scratch/temp directory. Terminated immediately.",
+                    risk_score=80.0,
+                    triggered_rules=["RULE-EXEC-01"],
+                    threat_category="Malicious Execution"
+                )
+
+    # Incident creation on HIGH severity
     incident_id = None
     incident_code = None
     alert_id = None
+    response_action = "LOG"
     
-    # 1. LOW RISK (0-39): Log event only
-    if severity == "LOW":
-        log_event(
-            event_type="NORMAL_TELEMETRY",
-            process_count=proc_telemetry.get("process_count", 0),
-            file_mod_rate=file_telemetry.get("file_mod_rate", 0.0),
-            avg_entropy=file_telemetry.get("avg_file_entropy", 0.0),
-            outbound_conns=net_telemetry.get("outbound_conn_count", 0),
-            risk_score=risk_score,
-            details_dict=risk_assessment
-        )
-        
-    # 2. MEDIUM RISK (40-69): Generate Security Alert
-    elif severity == "MEDIUM":
-        response_action = "ALERT"
-        alert_id = create_alert(
-            severity="MEDIUM",
-            title=f"Suspicious Behavior Detected ({threat_cat})",
-            description=f"Elevated risk score of {risk_score} detected. {len(triggered_rules)} rule(s) triggered.",
-            risk_score=risk_score,
-            triggered_rules=triggered_rules,
-            threat_category=threat_cat
-        )
-        
-    # 3. HIGH RISK (70-100): Raise Incident & Apply Controlled Safe Containment
-    elif severity == "HIGH":
+    if severity == "HIGH":
         response_action = "CONTAIN_AND_INCIDENT"
-        evidence_dict = {
-            "score_breakdown": risk_assessment["score_breakdown"],
-            "triggered_rules": triggered_rules,
-            "ml_inference": ml_result,
-            "target_process": rogue_proc,
-            "file_activity": file_telemetry,
-            "network_activity": net_telemetry
-        }
-        
-        # Safe containment attempt with AntiGravity (>=95%) and Browser (70%) thresholds
-        contain_result = terminate_process_safe(target_pid, target_name, is_tmp, cpu_percent, cmdline)
-        if contain_result["success"]:
-            contain_action_str = f"PROCESS_KILL (PID {target_pid})"
-        else:
-            contain_action_str = f"ISOLATE_ALERT (PID {target_pid}: {contain_result['message']})"
-        
+        contain_summary = f"TERMINATED: {', '.join(terminated_processes)}" if terminated_processes else "ISOLATE_MONITOR"
         incident_id, incident_code = create_incident(
             severity="HIGH",
             risk_score=risk_score,
             threat_category=threat_cat,
-            pid=target_pid,
-            process_name=target_name,
-            evidence_dict=evidence_dict,
-            status="OPEN",
-            containment_action=contain_action_str
+            pid=processes[0].get("pid", 0) if processes else 0,
+            process_name=processes[0].get("name", "unknown") if processes else "unknown",
+            evidence_dict={
+                "score_breakdown": risk_assessment["score_breakdown"],
+                "triggered_rules": triggered_rules,
+                "ml_inference": ml_result,
+                "terminated_processes": terminated_processes,
+                "file_activity": file_telemetry,
+                "network_activity": net_telemetry
+            },
+            status="CONTAINED" if terminated_processes else "OPEN",
+            containment_action=contain_summary
+        )
+    elif severity == "MEDIUM":
+        response_action = "ALERT"
+        alert_id = create_alert(
+            severity="MEDIUM",
+            title=f"Elevated Activity Flagged ({threat_cat})",
+            description=f"Elevated risk score ({risk_score}) detected. {len(triggered_rules)} rule(s) active.",
+            risk_score=risk_score,
+            triggered_rules=triggered_rules,
+            threat_category=threat_cat
         )
         
     return {
@@ -220,6 +241,8 @@ def triage_and_respond(proc_telemetry: dict, file_telemetry: dict, net_telemetry
         "severity": severity,
         "threat_category": threat_cat,
         "response_action": response_action,
+        "terminated_count": len(terminated_processes),
+        "terminated_details": terminated_processes,
         "incident_id": incident_id,
         "incident_code": incident_code,
         "alert_id": alert_id

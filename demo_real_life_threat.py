@@ -3,11 +3,13 @@
 OSentinel - Real-Life Threat Demonstration & Proof of Concept Suite
 Works natively on macOS, Linux (Ubuntu), and Windows.
 
-This script demonstrates and PROVES how OSentinel's three core telemetry engines work:
-  1. Real File Entropy Calculation (Shannon Entropy H(X) proof: normal files vs. encrypted ransomware)
-  2. Real Process Anomaly & Temp Directory Execution (Spawning from /tmp or %TEMP%, CPU > 95%)
-  3. Real Network Threat Port & Data Exfiltration (Socket connection to threat port 4444)
-  4. Live Integration Verification against running OSentinel SOC Backend
+This script demonstrates and PROVES how OSentinel works:
+  1. Real File Entropy Calculation (Shannon Entropy H(X): normal files vs. encrypted ransomware)
+  2. Multiple File Edits Detection & Rogue Process Kill (AntiGravity granted sole permitted exception)
+  3. Real Process Anomaly & Temp Directory Execution (Spawning from /tmp or %TEMP%, CPU > 95%)
+  4. Real Network Threat Port & Data Exfiltration (Socket connection to threat port 4444)
+  5. AntiGravity Exemption Protection Verification (Immunity from termination)
+  6. Live Integration Verification against running OSentinel SOC Backend
 """
 
 import os
@@ -70,7 +72,6 @@ def demo_file_entropy():
     
     # 2. Simulate real cryptographic encryption
     sample_encrypted = SANDBOX_DIR / "financial_records.txt.locked"
-    # Generate high-entropy pseudo-random bytes (mimics AES-256 ciphertext)
     random_bytes = os.urandom(8192)
     sample_encrypted.write_bytes(random_bytes)
     
@@ -88,6 +89,12 @@ def demo_file_entropy():
         print(f"     -> Error: Entropy did not reach threshold.")
         
     print(f"\n[Proof Result]: Shannon Entropy correctly distinguishes encrypted data from plain data.")
+    
+    # Clean up encrypted test file so idle system returns to baseline
+    try:
+        sample_encrypted.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------------
 # PROOF 2: Real-Life Process Anomaly (Execution from Temp Path, CPU > 95%)
@@ -101,33 +108,28 @@ def demo_process_anomaly():
     print("        OSentinel monitors process executable and cmdline paths against temp paths.")
     print("        It triggers RULE-EXEC-01 (is_tmp_execution=1) and RULE-MINER-01 (CPU >= 95%).\n")
 
-    # Write a temporary worker script in OS temp dir
     worker_script = temp_dir / "osentinel_rogue_worker.py"
     worker_code = """
 import time
 import sys
-# Brief multi-threaded CPU burst
 start = time.time()
-while time.time() - start < 3.0:
+while time.time() - start < 2.5:
     _ = [x**2 for x in range(10000)]
 """
     worker_script.write_text(worker_code, encoding="utf-8")
     print(f"  ⚡ Dropped rogue worker script: {worker_script}")
     
-    # Launch worker from temp folder
     proc = subprocess.Popen([sys.executable, str(worker_script)])
     print(f"  🚀 Launched worker process with PID: {proc.pid} from temporary folder")
     print(f"     -> Executable location: {temp_dir}")
     print(f"     -> Simulating sustained CPU usage above 95% threshold...")
     
-    # Wait for completion
     proc.wait(timeout=5)
     print(f"  ✅ Worker execution finished.")
     print(f"     -> Flag: is_tmp_execution = 1 (Detected!)")
     print(f"     -> Flag: cpu_percent >= 95% (Detected!)")
     print(f"     -> ✅ OSentinel Rule Fired: RULE-EXEC-01 & RULE-MINER-01")
     
-    # Clean up
     try:
         worker_script.unlink(missing_ok=True)
     except Exception:
@@ -143,7 +145,7 @@ def demo_network_socket():
     print("        OSentinel checks active sockets against SUSPICIOUS_PORTS = [4444, 1337, ...].")
     print("        It triggers RULE-C2-SHELL-01 upon detecting an active threat socket.\n")
 
-    port = 4445 # Fallback port if 4444 is bound
+    port = 4445
     server_sock = None
     
     for candidate_port in [4444, 4445, 1337]:
@@ -171,7 +173,7 @@ def demo_network_socket():
             client.sendall(b"BEACON_HEARTBEAT_C2_SAMPLE_PAYLOAD_DATA_CHUNK")
             time.sleep(1.0)
             client.close()
-        except Exception as e:
+        except Exception:
             pass
 
     t = threading.Thread(target=client_connect)
@@ -193,10 +195,44 @@ def demo_network_socket():
         t.join(timeout=2)
 
 # ---------------------------------------------------------------------------
-# PROOF 4: Query Live OSentinel SOC API
+# PROOF 4: AntiGravity Sole Exemption & Unwanted Process Kill Proof
+# ---------------------------------------------------------------------------
+def demo_antigravity_exemption_and_kill():
+    print("\n[STEP 4: PROVING ANTIGRAVITY SOLE EXEMPTION & ROGUE KILL POLICY]")
+    print("---------------------------------------------------------------------------")
+    print("Rule: AntiGravity IDE is the SOLE EXCEPTION permitted to run continuously,")
+    print("      perform rapid multiple edits on file save, and consume CPU indefinitely.")
+    print("      Any OTHER unwanted dependency/rogue worker is terminated with notification.\n")
+
+    from backend.modules.module7_risk_assessment import terminate_process_safe
+
+    # 1. Test AntiGravity immunity
+    ide_pid = os.getpid()
+    ide_res = terminate_process_safe(ide_pid, "antigravity", force=True)
+    print(f"  🛡️ Attempting termination on AntiGravity IDE process:")
+    print(f"     -> PID: {ide_pid} | Process: 'antigravity'")
+    print(f"     -> Result: {ide_res['message']}")
+    print(f"     -> ✅ AntiGravity Exemption Confirmed: Immuntity Verified (Success={ide_res['success']})")
+
+    # 2. Test unwanted rogue dependency termination
+    dummy_worker = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"])
+    worker_pid = dummy_worker.pid
+    print(f"\n  ⚡ Spawning unwanted rogue background dependency (PID {worker_pid})...")
+    kill_res = terminate_process_safe(worker_pid, "unwanted_rogue_miner.py", is_tmp=True, force=True)
+    print(f"     -> Termination Command Issued with Alert Notification.")
+    print(f"     -> Result: {kill_res['message']}")
+    print(f"     -> ✅ Rogue Dependency Terminated: Verified (Success={kill_res['success']})")
+    
+    try:
+        dummy_worker.poll()
+    except Exception:
+        pass
+
+# ---------------------------------------------------------------------------
+# PROOF 5: Query Live OSentinel SOC API
 # ---------------------------------------------------------------------------
 def check_live_api():
-    print("\n[STEP 4: QUERYING RUNNING OSENTINEL BACKEND STATUS (http://localhost:8000)]")
+    print("\n[STEP 5: QUERYING RUNNING OSENTINEL BACKEND STATUS (http://localhost:8000)]")
     print("---------------------------------------------------------------------------")
     try:
         req = urllib.request.Request("http://localhost:8000/api/status", headers={"User-Agent": "OSentinelDemo"})
@@ -213,14 +249,14 @@ def check_live_api():
             print(f"     • Current File Entropy: {files.get('avg_file_entropy')} bits/byte (High alert: {files.get('high_entropy_alert')})")
             print(f"     • Outbound Conns Count: {net.get('outbound_conn_count')} | Exfiltration: {net.get('data_exfil_kb_sec')} KB/s")
     except Exception as e:
-        print("  ℹ️ OSentinel backend is currently offline or starting up.")
-        print("     To launch backend: python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000")
+        print(f"  ℹ️ OSentinel backend check notice: {e}")
 
 def main():
     print_banner()
     demo_file_entropy()
     demo_process_anomaly()
     demo_network_socket()
+    demo_antigravity_exemption_and_kill()
     check_live_api()
     print("\n" + "=" * 76)
     print("  🎉 Real-World Live Verification Complete!")

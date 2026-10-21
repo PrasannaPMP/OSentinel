@@ -179,7 +179,7 @@ class ContainRequest(BaseModel):
 @app.post("/api/contain")
 def contain_incident(req: ContainRequest):
     if req.action == "TERMINATE":
-        res = terminate_process_safe(req.pid, req.process_name)
+        res = terminate_process_safe(req.pid, req.process_name, force=True)
         update_incident_status(req.incident_id, "RESOLVED", f"MANUAL_TERMINATE (PID {req.pid})")
         return {"success": True, "message": res["message"]}
     else:
