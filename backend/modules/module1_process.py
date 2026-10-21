@@ -6,10 +6,17 @@ from backend.config import SUSPICIOUS_PATHS
 
 _last_process_count = 0
 _last_sample_time = time.time()
+_last_proc_cpu_times = {} # {pid: (user_time, sys_time, timestamp)}
 _simulated_proc_activity = None
 
-BROWSER_KEYWORDS = ["safari", "chrome", "google chrome", "firefox", "msedge", "brave", "webkit"]
-IDE_KEYWORDS = ["antigravity", "antigravity-ide", "electron", "code", "cursor", "vscode"]
+BROWSER_KEYWORDS = [
+    "safari", "webkit.webcontent", "webkit", "chrome", "google chrome",
+    "google chrome helper", "firefox", "msedge", "brave", "opera", "edge"
+]
+IDE_KEYWORDS = [
+    "antigravity", "antigravity-ide", "electron", "code", "cursor", "vscode",
+    "language_server", "python", "python3", "uvicorn", "vite", "node"
+]
 TRUSTED_PREFIXES = ["/applications", "/usr", "/system", "/library", "c:/program files", "c:/windows/system32"]
 
 def set_simulated_process_activity(total_cpu: float = 98.4, spawn_rate: float = 12.0, is_tmp: bool = True):
@@ -22,8 +29,26 @@ def set_simulated_process_activity(total_cpu: float = 98.4, spawn_rate: float = 
         "expire_time": time.time() + 4.0
     }
 
+def get_accurate_process_cpu(proc, pid: int, current_time: float) -> float:
+    """Accurately calculates real-time CPU percentage by computing time deltas between samples."""
+    global _last_proc_cpu_times
+    try:
+        t = proc.cpu_times()
+        if pid in _last_proc_cpu_times:
+            prev_u, prev_s, prev_t = _last_proc_cpu_times[pid]
+            dt = max(0.1, current_time - prev_t)
+            delta = (t.user - prev_u) + (t.system - prev_s)
+            cpu_pct = round((delta / dt) * 100.0, 1)
+        else:
+            cpu_pct = 0.0
+            
+        _last_proc_cpu_times[pid] = (t.user, t.system, current_time)
+        return max(0.0, cpu_pct)
+    except Exception:
+        return 0.0
+
 def collect_process_telemetry():
-    global _last_process_count, _last_sample_time, _simulated_proc_activity
+    global _last_process_count, _last_sample_time, _simulated_proc_activity, _last_proc_cpu_times
     
     processes = []
     tmp_execution_count = 0
@@ -34,32 +59,35 @@ def collect_process_telemetry():
     current_time = time.time()
     dt = max(0.1, current_time - _last_sample_time)
     
-    # Check if a simulation hook is currently active
     is_sim_active = bool(_simulated_proc_activity and current_time < _simulated_proc_activity["expire_time"])
     if not is_sim_active:
         _simulated_proc_activity = None
     
-    for proc in psutil.process_iter(['pid', 'ppid', 'name', 'exe', 'cmdline', 'cpu_percent', 'memory_percent', 'username']):
+    active_pids = set()
+    
+    for proc in psutil.process_iter(['pid', 'ppid', 'name', 'exe', 'cmdline', 'memory_percent', 'username']):
         try:
             info = proc.info
             pid = info['pid']
+            active_pids.add(pid)
             name = info['name'] or f"proc_{pid}"
             name_lower = name.lower()
             exe = (info['exe'] or "").replace("\\", "/").lower()
-            cpu = info['cpu_percent'] or 0.0
             mem = info['memory_percent'] or 0.0
             raw_cmdline = " ".join(info['cmdline']) if info['cmdline'] else name
             cmdline_normalized = raw_cmdline.replace("\\", "/").lower()
             
+            # Accurate real-time CPU calculation
+            cpu = get_accurate_process_cpu(proc, pid, current_time)
+            
             is_browser = any(b in name_lower or b in cmdline_normalized for b in BROWSER_KEYWORDS)
             is_ide = any(i in name_lower or i in cmdline_normalized for i in IDE_KEYWORDS)
             
-            # Browser threshold 70%, Antigravity threshold 95%
+            # Auto-flag browsers exceeding 70%
             if is_browser and cpu >= 70.0:
                 browser_high_cpu_count += 1
             
-            # Accurate check: ONLY flag as temp execution if the EXECUTABLE itself or target script was spawned from temp
-            # Do NOT flag just because a program passes a temp path argument (e.g. --parent_pipe_path /var/.../T/...)
+            # Accurate temp path execution check
             is_tmp = False
             is_trusted_exe = any(exe.startswith(prefix) for prefix in TRUSTED_PREFIXES)
             
@@ -69,7 +97,6 @@ def collect_process_telemetry():
                     if exe.startswith(sp_norm):
                         is_tmp = True
                         break
-                    # Check first arguments (e.g. python /tmp/malware.py)
                     parts = raw_cmdline.split()
                     if len(parts) > 1 and parts[1].replace("\\", "/").lower().startswith(sp_norm):
                         is_tmp = True
@@ -78,7 +105,6 @@ def collect_process_telemetry():
                         is_tmp = True
                         break
             
-            # Flag obvious threat simulation / test payloads
             if "osentinel_rogue" in cmdline_normalized or "xmrig" in cmdline_normalized or "nc_shell" in cmdline_normalized:
                 is_tmp = True
                 
@@ -104,12 +130,14 @@ def collect_process_telemetry():
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, PermissionError):
             continue
             
+    # Purge exited PIDs from CPU tracker
+    _last_proc_cpu_times = {pid: v for pid, v in _last_proc_cpu_times.items() if pid in active_pids}
+    
     current_count = len(processes)
     spawn_velocity = max(0.0, (current_count - _last_process_count) / dt) if _last_process_count > 0 else 0.0
     _last_process_count = current_count
     _last_sample_time = current_time
     
-    # If simulation is active, inject a rogue high-CPU process and elevate total CPU above 95%
     if is_sim_active:
         sim_cpu = _simulated_proc_activity["total_cpu"]
         sim_spawn = _simulated_proc_activity["spawn_rate"]
@@ -117,7 +145,6 @@ def collect_process_telemetry():
         total_cpu = max(sim_cpu, total_cpu)
         spawn_velocity = max(sim_spawn, spawn_velocity)
         
-        # Inject top malicious worker process with >95% CPU consumption
         processes.insert(0, {
             "pid": 69420,
             "ppid": 1,
@@ -132,7 +159,6 @@ def collect_process_telemetry():
             "is_ide": False
         })
     
-    # Sort top processes by CPU usage
     processes.sort(key=lambda p: p['cpu_percent'], reverse=True)
     
     return {
