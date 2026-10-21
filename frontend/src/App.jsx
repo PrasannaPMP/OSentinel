@@ -64,7 +64,7 @@ export default function App() {
   const openIncidentsCount = incidents.filter(i => i.status === 'OPEN').length;
 
   return (
-    <div className="min-h-screen bg-[#070a0f] text-slate-100 bg-grid-pattern p-4 md:p-6">
+    <div className="min-h-screen bg-slate-50 text-slate-900 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header Bar */}
         <Header statusData={statusData} isConnected={isConnected} />
@@ -117,7 +117,7 @@ export default function App() {
         </main>
 
         {/* Footer */}
-        <footer className="mt-12 pt-6 border-t border-slate-800 text-center font-mono text-xs text-slate-500">
+        <footer className="mt-12 pt-6 border-t border-slate-200 text-center font-mono text-xs text-slate-500">
           OSentinel Host-Based Threat Defense • 2-Stage ML Pipeline • Built for Ubuntu Linux & Extensible Systems
         </footer>
       </div>

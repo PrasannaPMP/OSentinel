@@ -40,17 +40,17 @@ export default function MLModelMetrics() {
   return (
     <div className="space-y-6">
       {/* Header & Retrain Action */}
-      <div className="glass-panel p-6 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center space-x-3">
-          <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-400">
-            <BrainCircuit className="w-6 h-6" />
+      <div className="card-panel p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center space-x-3.5">
+          <div className="p-3 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+            <BrainCircuit className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h3 className="text-base font-bold font-mono text-slate-100 uppercase tracking-wider">
-              2-Stage Machine Learning Pipeline Diagnostics
+            <h3 className="text-base font-extrabold text-slate-900 uppercase tracking-tight font-mono m-0">
+              2-Stage Machine Learning Pipeline Transparency
             </h3>
-            <p className="text-xs text-slate-400 font-mono">
-              Unsupervised Isolation Forest (Anomaly Detection) + Supervised Random Forest Classifier
+            <p className="text-xs text-slate-600 font-medium m-0 mt-1">
+              Unsupervised Isolation Forest (Anomaly Scoring) & Supervised Multi-Class Random Forest Threat Classifier
             </p>
           </div>
         </div>
@@ -58,68 +58,82 @@ export default function MLModelMetrics() {
         <button
           onClick={handleRetrain}
           disabled={retraining}
-          className="px-4 py-2.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 font-mono text-xs font-bold transition-all flex items-center space-x-2"
+          className="btn-bold-primary"
+          style={{
+            backgroundColor: retraining ? '#94a3b8' : '#0f172a',
+            padding: '10px 18px',
+          }}
         >
           <RefreshCw className={`w-4 h-4 ${retraining ? 'animate-spin' : ''}`} />
-          <span>{retraining ? "RETRAINING ML MODELS..." : "RETRAIN ML PIPELINE"}</span>
+          <span>{retraining ? "RETRAINING ML PIPELINE..." : "RETRAIN ML MODELS"}</span>
         </button>
       </div>
 
       {/* Metric KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 font-mono">
-        <div className="glass-panel p-4 border border-slate-800">
-          <span className="text-xs text-slate-400 block">MODEL ACCURACY</span>
-          <span className="text-3xl font-extrabold text-emerald-400 block mt-1">
+        <div className="card-panel p-5">
+          <span className="text-xs text-slate-500 font-bold uppercase tracking-wider block">MODEL ACCURACY</span>
+          <span className="text-3xl font-extrabold text-slate-900 block mt-1.5">
             {((metrics?.accuracy ?? 1.0) * 100).toFixed(1)}%
           </span>
-          <span className="text-[11px] text-slate-500 mt-1 block">Test dataset validation</span>
+          <span className="text-xs text-slate-500 mt-1.5 block font-medium">Synthetic test verification</span>
         </div>
 
-        <div className="glass-panel p-4 border border-slate-800">
-          <span className="text-xs text-slate-400 block">PRECISION SCORE</span>
-          <span className="text-3xl font-extrabold text-cyan-400 block mt-1">
+        <div className="card-panel p-5">
+          <span className="text-xs text-slate-500 font-bold uppercase tracking-wider block">PRECISION SCORE</span>
+          <span className="text-3xl font-extrabold text-slate-900 block mt-1.5">
             {((metrics?.precision ?? 1.0) * 100).toFixed(1)}%
           </span>
-          <span className="text-[11px] text-slate-500 mt-1 block">Weighted precision</span>
+          <span className="text-xs text-slate-500 mt-1.5 block font-medium">Weighted macro precision</span>
         </div>
 
-        <div className="glass-panel p-4 border border-slate-800">
-          <span className="text-xs text-slate-400 block">RECALL SCORE</span>
-          <span className="text-3xl font-extrabold text-purple-400 block mt-1">
+        <div className="card-panel p-5">
+          <span className="text-xs text-slate-500 font-bold uppercase tracking-wider block">RECALL SCORE</span>
+          <span className="text-3xl font-extrabold text-slate-900 block mt-1.5">
             {((metrics?.recall ?? 1.0) * 100).toFixed(1)}%
           </span>
-          <span className="text-[11px] text-slate-500 mt-1 block">Threat capture recall</span>
+          <span className="text-xs text-slate-500 mt-1.5 block font-medium">True positive capture rate</span>
         </div>
 
-        <div className="glass-panel p-4 border border-slate-800">
-          <span className="text-xs text-slate-400 block">F1-SCORE</span>
-          <span className="text-3xl font-extrabold text-amber-400 block mt-1">
+        <div className="card-panel p-5">
+          <span className="text-xs text-slate-500 font-bold uppercase tracking-wider block">F1-SCORE</span>
+          <span className="text-3xl font-extrabold text-slate-900 block mt-1.5">
             {((metrics?.f1_score ?? 1.0) * 100).toFixed(1)}%
           </span>
-          <span className="text-[11px] text-slate-500 mt-1 block">Harmonic mean score</span>
+          <span className="text-xs text-slate-500 mt-1.5 block font-medium">Harmonic mean balance</span>
         </div>
       </div>
 
       {/* Feature Importance Rankings Chart */}
-      <div className="glass-panel p-6 border border-slate-800 space-y-4">
-        <h4 className="text-sm font-semibold text-slate-200 font-mono uppercase tracking-wider flex items-center space-x-2">
-          <BarChart3 className="w-5 h-5 text-purple-400" />
-          <span>Random Forest Feature Importance Weights</span>
-        </h4>
+      <div className="card-panel p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-extrabold text-slate-900 font-mono uppercase tracking-wider flex items-center space-x-2 m-0">
+            <BarChart3 className="w-5 h-5 text-slate-800" />
+            <span>Random Forest Model Feature Importance Breakdown</span>
+          </h4>
+          <span className="badge-clean badge-neutral font-mono">
+            NORMALIZED RELATIVE WEIGHTS
+          </span>
+        </div>
 
         <div className="space-y-3 font-mono text-xs">
           {Object.entries(featureImportances)
             .sort((a, b) => b[1] - a[1])
             .map(([featName, impVal]) => (
               <div key={featName} className="space-y-1">
-                <div className="flex justify-between text-slate-300">
-                  <span className="font-semibold text-cyan-300">{featName}</span>
-                  <span className="text-purple-400 font-bold">{(impVal * 100).toFixed(1)}%</span>
+                <div className="flex justify-between text-slate-700">
+                  <span className="font-bold text-slate-900">{featName}</span>
+                  <span className="text-slate-900 font-extrabold">{(impVal * 100).toFixed(1)}%</span>
                 </div>
-                <div className="w-full bg-slate-900 rounded-full h-2.5 overflow-hidden border border-slate-800">
+                <div style={{ width: '100%', height: '8px', backgroundColor: '#f1f5f9', borderRadius: '4px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
                   <div
-                    className="bg-gradient-to-r from-cyan-500 to-purple-500 h-2.5 rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, impVal * 300)}%` }}
+                    style={{
+                      width: `${Math.min(100, impVal * 300)}%`,
+                      height: '100%',
+                      backgroundColor: '#0f172a',
+                      borderRadius: '4px',
+                      transition: 'width 0.5s ease',
+                    }}
                   ></div>
                 </div>
               </div>

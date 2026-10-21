@@ -20,49 +20,49 @@ export default function AttackSimulator({ onSimulateAttack, activeSim }) {
       id: 'RANSOMWARE',
       title: 'Ransomware Mass Encryption',
       icon: Lock,
-      color: 'rose',
-      description: 'Simulates rapid file modification velocity (85 writes/sec) with high Shannon Entropy (H=7.85 bits/byte) in an isolated memory buffer.',
-      impact: 'Triggers RULE-RANSOMWARE-01, raises Risk Score to >85 (HIGH), generates incident and isolates process.'
+      description: 'Simulates rapid file modification velocity (85 writes/sec) with high Shannon Entropy (H=7.85 bits/byte) in a sandbox memory buffer.',
+      impact: 'Triggers RULE-RANSOMWARE-01, raises composite Risk Score to >85 (HIGH), and dispatches automated process suspension.',
+      buttonText: 'EXECUTE RANSOMWARE SIMULATION'
     },
     {
       id: 'REVERSE_SHELL',
-      title: 'Reverse Shell C2 Connect',
+      title: 'Reverse Shell C2 Connection',
       icon: Network,
-      color: 'amber',
-      description: 'Simulates outbound socket connection to C2 port 4444 originating from executable binary spawned under /tmp.',
-      impact: 'Triggers RULE-C2-SHELL-01 & RULE-EXEC-01, flags threat port, raises Risk Score to >80 (HIGH).'
+      description: 'Simulates unauthorized outbound socket connection to remote Command & Control (C2) port 4444 from an executable located under /tmp.',
+      impact: 'Triggers RULE-C2-SHELL-01 & RULE-EXEC-01, flags threat port, raises Risk Score to >80 (HIGH).',
+      buttonText: 'EXECUTE REVERSE SHELL C2'
     },
     {
       id: 'EXFILTRATION',
       title: 'Data Exfiltration Burst',
       icon: ArrowUpRight,
-      color: 'purple',
-      description: 'Simulates high throughput outbound data stream (14.5 MB/s) across 18 concurrent socket descriptors.',
-      impact: 'Triggers RULE-EXFIL-01, flags high data exfiltration rate, predicts Data Exfiltration category.'
+      description: 'Simulates high-throughput outbound data transmission (14.5 MB/s) across multiple concurrent foreign socket descriptors.',
+      impact: 'Triggers RULE-EXFIL-01, flags excessive data exfiltration threshold, predicts Data Exfiltration attack vector.',
+      buttonText: 'EXECUTE DATA EXFILTRATION'
     },
     {
       id: 'CRYPTOMINER',
       title: 'CryptoMiner CPU Hijack',
       icon: Cpu,
-      color: 'cyan',
-      description: 'Simulates sustained 96% CPU spike accompanied by high thread spawn velocity originating from xmrig payload.',
-      impact: 'Triggers RULE-MINER-01, flags abnormal CPU spike, predicts CryptoMiner threat category.'
+      description: 'Simulates sustained 96% CPU spike accompanied by rapid thread spawn velocity originating from an xmrig-like background payload.',
+      impact: 'Triggers RULE-MINER-01, flags abnormal processor consumption, predicts CryptoMiner threat category.',
+      buttonText: 'EXECUTE CRYPTOMINER SPIKE'
     }
   ];
 
   return (
     <div className="space-y-6">
       {/* Simulation Info Header */}
-      <div className="glass-panel p-6 border border-slate-800 space-y-2">
-        <div className="flex items-center space-x-3">
-          <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400">
-            <Zap className="w-6 h-6" />
+      <div className="card-panel p-6">
+        <div className="flex items-center space-x-3.5">
+          <div className="p-3 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+            <Zap className="w-6 h-6 text-amber-400" />
           </div>
           <div>
-            <h3 className="text-base font-bold font-mono text-slate-100 uppercase tracking-wider">
-              Interactive Safe Threat Simulator Sandbox
+            <h3 className="text-base font-extrabold text-slate-900 uppercase tracking-tight font-mono m-0">
+              Interactive Safe Threat Simulation Sandbox
             </h3>
-            <p className="text-xs text-slate-400 font-mono">
+            <p className="text-xs text-slate-600 font-medium m-0 mt-1">
               Test OSentinel's real-time detection, Isolation Forest anomaly scoring, and automated triage containment safely in memory without risking host files.
             </p>
           </div>
@@ -71,15 +71,17 @@ export default function AttackSimulator({ onSimulateAttack, activeSim }) {
 
       {/* Active Simulation Status Banner */}
       {activeSim && (
-        <div className="glass-panel-rose p-4 border border-rose-500/50 flex items-center justify-between text-rose-200 animate-pulse font-mono text-xs">
+        <div className="card-panel p-4 bg-red-50 border-red-300 flex items-center justify-between text-red-900 font-mono text-xs">
           <div className="flex items-center space-x-3">
-            <ShieldAlert className="w-6 h-6 text-rose-400" />
+            <ShieldAlert className="w-5 h-5 text-red-600 flex-shrink-0" />
             <div>
-              <strong className="text-sm block">THREAT SCENARIO IN PROGRESS: {activeSim.type}</strong>
-              <span>{activeSim.details}</span>
+              <strong className="text-sm block text-red-800">ATTACK SCENARIO ACTIVE: {activeSim.type}</strong>
+              <span className="text-slate-700">{activeSim.details}</span>
             </div>
           </div>
-          <span className="px-3 py-1 rounded bg-rose-500 text-white font-bold">ACTIVE</span>
+          <span className="px-3 py-1 rounded-md bg-red-600 text-white font-extrabold text-xs">
+            SIMULATION RUNNING
+          </span>
         </div>
       )}
 
@@ -90,38 +92,43 @@ export default function AttackSimulator({ onSimulateAttack, activeSim }) {
           const isLoading = loadingType === scen.id;
 
           return (
-            <div key={scen.id} className="glass-panel p-6 border border-slate-800 flex flex-col justify-between space-y-4 hover:border-slate-700 transition-colors">
+            <div key={scen.id} className="card-panel p-6 flex flex-col justify-between space-y-4">
               <div className="space-y-3">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-cyan-400">
-                    <Icon className="w-5 h-5" />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2.5 rounded-md bg-slate-100 border border-slate-300 text-slate-800">
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm m-0">{scen.title}</h4>
+                      <span className="text-[11px] font-mono font-bold text-slate-500">SCENARIO: {scen.id}</span>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-bold font-mono text-slate-100 text-sm">{scen.title}</h4>
-                    <span className="text-[11px] font-mono text-cyan-400">SCENARIO: {scen.id}</span>
-                  </div>
+                  <span className="badge-clean badge-neutral font-mono">SAFE DEMO</span>
                 </div>
 
-                <p className="text-xs text-slate-300 font-mono leading-relaxed">
+                <p className="text-xs text-slate-600 leading-relaxed m-0 font-medium">
                   {scen.description}
                 </p>
 
-                <div className="p-2.5 rounded bg-slate-950/80 border border-slate-800/80 text-[11px] font-mono text-slate-400">
-                  <strong className="text-slate-300">Expected Outcome:</strong> {scen.impact}
+                <div className="p-3 rounded-md bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
+                  <strong className="text-slate-900 font-bold block mb-1">Expected Security Response:</strong>
+                  {scen.impact}
                 </div>
               </div>
 
+              {/* Bold, Legible Action Button */}
               <button
                 disabled={isLoading}
                 onClick={() => handleSimulate(scen.id)}
-                className={`w-full py-2.5 px-4 rounded-lg font-mono text-xs font-bold transition-all flex items-center justify-center space-x-2 ${
-                  isLoading
-                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10 active:scale-[0.98]'
-                }`}
+                className="btn-bold-primary w-full py-3 text-xs tracking-wide"
+                style={{
+                  backgroundColor: isLoading ? '#94a3b8' : '#0f172a',
+                  color: '#ffffff',
+                }}
               >
-                <Zap className="w-4 h-4 text-cyan-400" />
-                <span>{isLoading ? "LAUNCHING SIMULATION..." : `FIRE SIMULATION: ${scen.title.toUpperCase()}`}</span>
+                <Zap className="w-4 h-4 text-amber-300" />
+                <span>{isLoading ? "DISPATCHING SIMULATION..." : scen.buttonText}</span>
               </button>
             </div>
           );

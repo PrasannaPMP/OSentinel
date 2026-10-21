@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, ShieldAlert, Cpu, HardDrive, Network, Zap } from 'lucide-react';
+import { Cpu, HardDrive, Network, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 export default function RiskOverviewGauge({ statusData }) {
   const [history, setHistory] = useState([]);
@@ -19,172 +19,181 @@ export default function RiskOverviewGauge({ statusData }) {
       const timeStr = new Date(statusData.timestamp * 1000).toLocaleTimeString();
       setHistory(prev => {
         const next = [...prev, { time: timeStr, risk: riskScore }];
-        return next.slice(-20); // Keep last 20 ticks
+        return next.slice(-20);
       });
     }
   }, [statusData?.timestamp, riskScore]);
 
   // Color mapping
-  let gaugeColor = "#10b981"; // Emerald
-  let strokeColor = "stroke-emerald-500";
+  let gaugeColor = "#16a34a"; // Green
+  let badgeClass = "badge-clean badge-emerald";
   if (riskScore >= 70) {
-    gaugeColor = "#f43f5e"; // Rose
-    strokeColor = "stroke-rose-500";
+    gaugeColor = "#dc2626"; // Red
+    badgeClass = "badge-clean badge-rose";
   } else if (riskScore >= 40) {
-    gaugeColor = "#f59e0b"; // Amber
-    strokeColor = "stroke-amber-500";
+    gaugeColor = "#d97706"; // Amber
+    badgeClass = "badge-clean badge-amber";
   }
 
   return (
     <div className="space-y-6">
       {/* Top 4 KPI Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="glass-panel p-4 border border-slate-800 flex items-center justify-between">
+        {/* Card 1 */}
+        <div className="card-panel p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-400 font-mono">ACTIVE PROCESSES</p>
-            <p className="text-2xl font-bold text-slate-100 font-mono mt-1">{procTelemetry.process_count ?? 0}</p>
-            <p className="text-xs text-cyan-400 mt-1">Spawn velocity: {procTelemetry.spawn_rate ?? 0}/s</p>
+            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider font-mono m-0">ACTIVE PROCESSES</p>
+            <p className="text-2xl font-extrabold text-slate-900 font-mono mt-1 mb-0">{procTelemetry.process_count ?? 0}</p>
+            <p className="text-xs text-slate-600 mt-1 mb-0 font-medium">Spawn rate: <strong className="text-slate-900">{procTelemetry.spawn_rate ?? 0}/s</strong></p>
           </div>
-          <div className="p-3 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+          <div className="p-3 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
             <Cpu className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="glass-panel p-4 border border-slate-800 flex items-center justify-between">
+        {/* Card 2 */}
+        <div className="card-panel p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-400 font-mono">FILE ENTROPY H(X)</p>
-            <p className="text-2xl font-bold text-slate-100 font-mono mt-1">{fileTelemetry.avg_file_entropy ?? 0.0}</p>
-            <p className="text-xs text-slate-400 mt-1">Mod rate: {fileTelemetry.file_mod_rate ?? 0}/s</p>
+            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider font-mono m-0">FILE ENTROPY H(X)</p>
+            <p className="text-2xl font-extrabold text-slate-900 font-mono mt-1 mb-0">{fileTelemetry.avg_file_entropy ?? 0.0}</p>
+            <p className="text-xs text-slate-600 mt-1 mb-0 font-medium">Write rate: <strong className="text-slate-900">{fileTelemetry.file_mod_rate ?? 0}/s</strong></p>
           </div>
-          <div className="p-3 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20">
+          <div className="p-3 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
             <HardDrive className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="glass-panel p-4 border border-slate-800 flex items-center justify-between">
+        {/* Card 3 */}
+        <div className="card-panel p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-400 font-mono">OUTBOUND SOCKETS</p>
-            <p className="text-2xl font-bold text-slate-100 font-mono mt-1">{netTelemetry.outbound_conn_count ?? 0}</p>
-            <p className="text-xs text-slate-400 mt-1">Threat port flag: {netTelemetry.suspicious_port_flag ? "TRIGGERED" : "CLEAN"}</p>
+            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider font-mono m-0">OUTBOUND SOCKETS</p>
+            <p className="text-2xl font-extrabold text-slate-900 font-mono mt-1 mb-0">{netTelemetry.outbound_conn_count ?? 0}</p>
+            <p className="text-xs text-slate-600 mt-1 mb-0 font-medium">
+              Threat ports: <strong className={netTelemetry.suspicious_port_flag ? "text-red-600 font-bold" : "text-emerald-700 font-bold"}>
+                {netTelemetry.suspicious_port_flag ? "TRIGGERED" : "CLEAN"}
+              </strong>
+            </p>
           </div>
-          <div className="p-3 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <div className="p-3 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
             <Network className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="glass-panel p-4 border border-slate-800 flex items-center justify-between">
+        {/* Card 4 */}
+        <div className="card-panel p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-400 font-mono">PREDICTED THREAT</p>
-            <p className="text-xl font-bold text-slate-100 font-mono mt-1 truncate max-w-[150px]">{threatCat}</p>
-            <p className="text-xs text-slate-400 mt-1">Severity: <span className="font-bold text-slate-200">{severity}</span></p>
+            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider font-mono m-0">PREDICTED VECTOR</p>
+            <p className="text-xl font-extrabold text-slate-900 font-mono mt-1 mb-0 truncate max-w-[150px]">{threatCat}</p>
+            <p className="text-xs text-slate-600 mt-1 mb-0 font-medium">
+              Severity: <strong className="text-slate-900">{severity}</strong>
+            </p>
           </div>
-          <div className="p-3 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
-            <Zap className="w-6 h-6" />
+          <div className="p-3 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
+            {severity === 'HIGH' ? <AlertTriangle className="w-6 h-6 text-red-600" /> : <ShieldCheck className="w-6 h-6 text-emerald-600" />}
           </div>
         </div>
       </div>
 
       {/* Main Gauge & Real-Time Risk Graph Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Radial Risk Gauge Dial */}
-        <div className="glass-panel p-6 border border-slate-800 flex flex-col items-center justify-center text-center relative overflow-hidden">
-          <h3 className="text-sm font-semibold text-slate-300 font-mono uppercase tracking-wider mb-4">
-            Unified OS Risk Index
+        <div className="card-panel p-6 flex flex-col items-center justify-center text-center">
+          <h3 className="text-xs font-bold text-slate-700 font-mono uppercase tracking-wider mb-2">
+            Host Risk Severity Index
           </h3>
           
-          <div className="relative w-48 h-48 flex items-center justify-center my-2">
+          <div className="relative w-44 h-44 flex items-center justify-center my-2">
             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
               <circle
                 cx="50"
                 cy="50"
-                r="40"
-                className="stroke-slate-800"
-                strokeWidth="8"
+                r="38"
+                stroke="#e2e8f0"
+                strokeWidth="7"
                 fill="transparent"
               />
               <circle
                 cx="50"
                 cy="50"
-                r="40"
+                r="38"
                 stroke={gaugeColor}
-                strokeWidth="8"
-                strokeDasharray={251.2}
-                strokeDashoffset={251.2 - (251.2 * riskScore) / 100}
+                strokeWidth="7"
+                strokeDasharray={238.7}
+                strokeDashoffset={238.7 - (238.7 * riskScore) / 100}
                 strokeLinecap="round"
                 fill="transparent"
-                className="transition-all duration-500 ease-out"
+                style={{ transition: 'stroke-dashoffset 0.5s ease-out' }}
               />
             </svg>
 
             <div className="absolute flex flex-col items-center justify-center">
-              <span className="text-4xl font-extrabold font-mono text-slate-50">{riskScore}</span>
-              <span className="text-xs font-mono text-slate-400">/ 100</span>
-              <span className={`mt-1 text-xs px-2 py-0.5 rounded font-mono font-bold uppercase ${
-                severity === 'HIGH' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40' :
-                severity === 'MEDIUM' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' :
-                'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-              }`}>
+              <span className="text-4xl font-extrabold font-mono text-slate-900 leading-none">{riskScore}</span>
+              <span className="text-xs font-mono font-medium text-slate-400 mt-0.5">/ 100</span>
+              <span className={`mt-2 ${badgeClass}`}>
                 {severity} RISK
               </span>
             </div>
           </div>
 
-          <p className="text-xs text-slate-400 mt-2 font-mono">
-            {severity === 'HIGH' ? 'High Risk Threat Detected - Automated Containment Enabled' :
-             severity === 'MEDIUM' ? 'Suspicious Behavioral Anomalies Flagged - Monitoring' :
-             'System Operating in Baseline Safe State'}
+          <p className="text-xs text-slate-500 mt-2 font-mono m-0 font-medium">
+            {severity === 'HIGH' ? 'Critical anomaly detected — containment engaged' :
+             severity === 'MEDIUM' ? 'Behavioral deviation flagged — monitoring' :
+             'System operating in verified safe baseline'}
           </p>
         </div>
 
         {/* Real-time Risk Score Trend Line Chart */}
-        <div className="lg:col-span-2 glass-panel p-6 border border-slate-800 flex flex-col justify-between">
+        <div className="md:grid-cols-2 card-panel p-6 flex flex-col justify-between" style={{ gridColumn: 'span 2' }}>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-semibold text-slate-300 font-mono uppercase tracking-wider">
-                Real-Time Risk Telemetry Stream
+              <h3 className="text-xs font-bold text-slate-800 font-mono uppercase tracking-wider m-0">
+                Live Risk Telemetry Activity
               </h3>
-              <p className="text-xs text-slate-400">Live 2-second polling tick stream</p>
+              <p className="text-xs text-slate-500 m-0 mt-0.5 font-medium">Consecutive 2-second telemetry probe timeline</p>
             </div>
-            <div className="flex items-center space-x-2 text-xs font-mono text-cyan-400">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-              <span>LIVE FEED</span>
+            <div className="flex items-center space-x-1.5 text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>LIVE POLLING</span>
             </div>
           </div>
 
-          <div className="h-48 w-full">
+          <div className="h-44 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={history}>
                 <defs>
                   <linearGradient id="riskGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={gaugeColor} stopOpacity={0.4}/>
-                    <stop offset="95%" stopColor={gaugeColor} stopOpacity={0.0}/>
+                    <stop offset="5%" stopColor={gaugeColor} stopOpacity={0.25}/>
+                    <stop offset="95%" stopColor={gaugeColor} stopOpacity={0.02}/>
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="time" stroke="#475569" tick={{ fontSize: 10 }} />
-                <YAxis domain={[0, 100]} stroke="#475569" tick={{ fontSize: 10 }} />
+                <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10, fill: '#64748b' }} />
+                <YAxis domain={[0, 100]} stroke="#94a3b8" tick={{ fontSize: 10, fill: '#64748b' }} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}
+                  contentStyle={{ backgroundColor: '#ffffff', borderColor: '#cbd5e1', borderRadius: '6px', fontSize: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                  labelStyle={{ color: '#0f172a', fontWeight: 'bold' }}
                 />
-                <Area type="monotone" dataKey="risk" stroke={gaugeColor} strokeWidth={2} fillOpacity={1} fill="url(#riskGrad)" />
+                <Area type="monotone" dataKey="risk" stroke={gaugeColor} strokeWidth={2.5} fillOpacity={1} fill="url(#riskGrad)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
 
           {/* Risk Weight Breakdown Bar */}
-          <div className="mt-4 pt-3 border-t border-slate-800/80">
-            <p className="text-xs font-mono text-slate-400 mb-2">RISK FORMULA CONTRIBUTION WEIGHTS:</p>
+          <div className="mt-4 pt-3 border-t border-slate-200">
+            <p className="text-[11px] font-mono font-bold text-slate-500 mb-2 uppercase">
+              Composite Risk Model Contribution Weights:
+            </p>
             <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono">
-              <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                <span className="text-slate-400 block">Rule Engine (45%)</span>
-                <span className="text-cyan-400 font-bold">+{breakdown.rule_component} pts</span>
+              <div className="p-2 rounded bg-slate-50 border border-slate-200">
+                <span className="text-slate-500 block text-[11px]">Rule Heuristics (45%)</span>
+                <span className="text-slate-900 font-extrabold text-sm">+{breakdown.rule_component} pts</span>
               </div>
-              <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                <span className="text-slate-400 block">Isolation Forest (35%)</span>
-                <span className="text-purple-400 font-bold">+{breakdown.anomaly_component} pts</span>
+              <div className="p-2 rounded bg-slate-50 border border-slate-200">
+                <span className="text-slate-500 block text-[11px]">Isolation Forest (35%)</span>
+                <span className="text-slate-900 font-extrabold text-sm">+{breakdown.anomaly_component} pts</span>
               </div>
-              <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                <span className="text-slate-400 block">Random Forest (20%)</span>
-                <span className="text-amber-400 font-bold">+{breakdown.classifier_component} pts</span>
+              <div className="p-2 rounded bg-slate-50 border border-slate-200">
+                <span className="text-slate-500 block text-[11px]">Random Forest (20%)</span>
+                <span className="text-slate-900 font-extrabold text-sm">+{breakdown.classifier_component} pts</span>
               </div>
             </div>
           </div>

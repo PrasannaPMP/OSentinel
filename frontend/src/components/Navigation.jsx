@@ -13,7 +13,7 @@ export default function Navigation({ activeTab, setActiveTab, openIncidentsCount
   ];
 
   return (
-    <nav className="flex flex-wrap items-center gap-2 mb-6 p-1.5 glass-panel border border-slate-800">
+    <nav className="card-panel p-2 mb-6 flex flex-wrap items-center gap-1.5">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.id;
@@ -21,16 +21,21 @@ export default function Navigation({ activeTab, setActiveTab, openIncidentsCount
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center space-x-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 font-mono ${
+            style={{
+              backgroundColor: isActive ? '#0f172a' : 'transparent',
+              color: isActive ? '#ffffff' : '#334155',
+              borderColor: isActive ? '#0f172a' : 'transparent',
+            }}
+            className={`flex items-center space-x-2 px-3.5 py-2.5 rounded-md text-xs font-bold transition-all duration-150 border cursor-pointer ${
               isActive
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                ? 'shadow-sm'
+                : 'hover:bg-slate-100 hover:text-slate-900'
             }`}
           >
-            <Icon className={`w-4 h-4 ${isActive ? 'text-cyan-400' : 'text-slate-400'}`} />
+            <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-500'}`} />
             <span>{tab.label}</span>
             {tab.badge > 0 && (
-              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500 text-white animate-pulse">
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-red-600 text-white leading-none">
                 {tab.badge}
               </span>
             )}

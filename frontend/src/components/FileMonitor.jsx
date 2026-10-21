@@ -12,12 +12,14 @@ export default function FileMonitor({ fileTelemetry }) {
     <div className="space-y-6">
       {/* Entropy Alert Banner if High */}
       {isHighEntropy && (
-        <div className="glass-panel-rose p-4 border border-rose-500/50 flex items-center space-x-3 text-rose-200 animate-pulse">
-          <AlertTriangle className="w-6 h-6 text-rose-400 flex-shrink-0" />
+        <div className="card-panel p-4 bg-red-50 border-red-300 flex items-center space-x-3 text-red-900">
+          <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0" />
           <div>
-            <h4 className="font-bold font-mono text-sm uppercase">Ransomware Entropy Anomaly Alert!</h4>
-            <p className="text-xs text-rose-300 font-mono">
-              Shannon Entropy $H(X)$ reached high threshold ({avgEntropy} / 8.0) with rapid write rate ({modRate} files/sec). High likelihood of cryptographic ransomware payload.
+            <h4 className="font-extrabold font-mono text-sm uppercase m-0 text-red-800">
+              Ransomware Cryptographic Entropy Alert Triggered!
+            </h4>
+            <p className="text-xs text-red-700 font-mono m-0 mt-0.5">
+              Shannon Entropy reached high threshold ({avgEntropy} / 8.0) with rapid write rate ({modRate} writes/sec). High probability of active cryptographic encryption.
             </p>
           </div>
         </div>
@@ -25,95 +27,97 @@ export default function FileMonitor({ fileTelemetry }) {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="glass-panel p-4 border border-slate-800">
-          <p className="text-xs text-slate-400 font-mono">AVERAGE SHANNON ENTROPY H(X)</p>
+        <div className="card-panel p-5">
+          <p className="text-xs text-slate-500 font-bold uppercase tracking-wider font-mono m-0">SHANNON ENTROPY H(X)</p>
           <div className="flex items-baseline space-x-2 mt-2">
-            <span className={`text-3xl font-extrabold font-mono ${avgEntropy >= 7.2 ? 'text-rose-400' : 'text-purple-400'}`}>
+            <span className={`text-3xl font-extrabold font-mono ${avgEntropy >= 7.2 ? 'text-red-600' : 'text-slate-900'}`}>
               {avgEntropy}
             </span>
-            <span className="text-xs text-slate-500 font-mono">/ 8.0 bits/byte</span>
+            <span className="text-xs text-slate-400 font-mono font-medium">/ 8.0 bits/byte</span>
           </div>
-          <p className="text-xs text-slate-400 mt-2 font-mono">
+          <p className="text-xs text-slate-500 mt-2 font-mono m-0">
             Encrypted content threshold: &ge; 7.2 bits/byte
           </p>
         </div>
 
-        <div className="glass-panel p-4 border border-slate-800">
-          <p className="text-xs text-slate-400 font-mono">FILE MODIFICATION RATE</p>
+        <div className="card-panel p-5">
+          <p className="text-xs text-slate-500 font-bold uppercase tracking-wider font-mono m-0">FILE MODIFICATION RATE</p>
           <div className="flex items-baseline space-x-2 mt-2">
-            <span className="text-3xl font-extrabold font-mono text-cyan-400">{modRate}</span>
-            <span className="text-xs text-slate-500 font-mono">writes / sec</span>
+            <span className="text-3xl font-extrabold font-mono text-slate-900">{modRate}</span>
+            <span className="text-xs text-slate-400 font-mono font-medium">writes / sec</span>
           </div>
-          <p className="text-xs text-slate-400 mt-2 font-mono">
-            High write velocity threshold: &ge; 15 writes/sec
+          <p className="text-xs text-slate-500 mt-2 font-mono m-0">
+            Rapid encryption velocity threshold: &ge; 15 writes/sec
           </p>
         </div>
 
-        <div className="glass-panel p-4 border border-slate-800">
-          <p className="text-xs text-slate-400 font-mono">DELETION BURST RATE</p>
+        <div className="card-panel p-5">
+          <p className="text-xs text-slate-500 font-bold uppercase tracking-wider font-mono m-0">DELETION BURST RATE</p>
           <div className="flex items-baseline space-x-2 mt-2">
-            <span className="text-3xl font-extrabold font-mono text-amber-400">{delRate}</span>
-            <span className="text-xs text-slate-500 font-mono">deletions / sec</span>
+            <span className="text-3xl font-extrabold font-mono text-slate-900">{delRate}</span>
+            <span className="text-xs text-slate-400 font-mono font-medium">deletions / sec</span>
           </div>
-          <p className="text-xs text-slate-400 mt-2 font-mono">
+          <p className="text-xs text-slate-500 mt-2 font-mono m-0">
             Mass deletion threshold: &ge; 10 deletes/sec
           </p>
         </div>
       </div>
 
-      {/* File Activity Log Table */}
-      <div className="glass-panel p-6 border border-slate-800 space-y-4">
-        <h3 className="text-sm font-semibold text-slate-200 font-mono uppercase tracking-wider flex items-center space-x-2">
-          <HardDrive className="w-5 h-5 text-purple-400" />
-          <span>Active File System Telemetry & Entropy Logs</span>
-        </h3>
+      {/* Sample Monitored Files Table */}
+      <div className="card-panel p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-extrabold text-slate-900 font-mono uppercase tracking-wider flex items-center space-x-2 m-0">
+            <HardDrive className="w-5 h-5 text-slate-800" />
+            <span>Monitored File System Watchdog & Entropy Inspector</span>
+          </h3>
+          <span className="badge-clean badge-neutral font-mono">
+            {sampleFiles.length} FILES TRACKED
+          </span>
+        </div>
 
-        <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/60">
-          <table className="w-full text-left text-xs font-mono">
-            <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider border-b border-slate-800">
+        <div className="data-table-container">
+          <table className="clean-table">
+            <thead>
               <tr>
-                <th className="py-3 px-4">File Path</th>
-                <th className="py-3 px-4">Calculated Entropy H(X)</th>
-                <th className="py-3 px-4">Encryption Risk</th>
-                <th className="py-3 px-4 text-right">Status</th>
+                <th>Monitored File Path</th>
+                <th>Entropy Score H(X)</th>
+                <th>Entropy Category</th>
+                <th style={{ textAlign: 'right' }}>Security Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 text-slate-300">
-              {sampleFiles.map((file, idx) => (
-                <tr key={idx} className="hover:bg-slate-900/40">
-                  <td className="py-3 px-4 flex items-center space-x-2 text-slate-200">
-                    <FileCode className="w-4 h-4 text-slate-500" />
-                    <span>{file.path}</span>
-                  </td>
-                  <td className="py-3 px-4 font-bold text-purple-300">
-                    {file.entropy} bits
-                  </td>
-                  <td className="py-3 px-4">
-                    {file.entropy >= 7.2 ? (
-                      <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
-                        HIGH ENTROPY (ENCRYPTED)
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        NORMAL STRUCTURE
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    {file.status === 'ENCRYPTED' ? (
-                      <span className="inline-flex items-center space-x-1 text-rose-400 font-bold">
-                        <Lock className="w-3.5 h-3.5" />
-                        <span>QUARANTINED</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center space-x-1 text-emerald-400">
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>VERIFIED</span>
-                      </span>
-                    )}
+            <tbody>
+              {sampleFiles.length === 0 ? (
+                <tr>
+                  <td colSpan="4" style={{ textAlign: 'center', padding: '2rem 1rem', color: '#64748b' }}>
+                    No file system write events intercepted in active window.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                sampleFiles.map((file, idx) => (
+                  <tr key={idx}>
+                    <td className="font-mono text-xs font-semibold text-slate-800">
+                      {file.path}
+                    </td>
+                    <td className="font-mono font-bold text-slate-900">
+                      {file.entropy} bits/byte
+                    </td>
+                    <td>
+                      {file.entropy >= 7.2 ? (
+                        <span className="badge-clean badge-rose font-mono">ENCRYPTED / HIGH ENTROPY</span>
+                      ) : file.entropy >= 5.0 ? (
+                        <span className="badge-clean badge-amber font-mono">COMPRESSED / NORMAL</span>
+                      ) : (
+                        <span className="badge-clean badge-emerald font-mono">PLAINTEXT / LOW</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span className={`badge-clean ${file.status === 'SUSPICIOUS' ? 'badge-rose' : 'badge-emerald'}`}>
+                        {file.status || 'NORMAL'}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
