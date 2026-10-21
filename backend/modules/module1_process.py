@@ -10,6 +10,7 @@ _simulated_proc_activity = None
 
 BROWSER_KEYWORDS = ["safari", "chrome", "google chrome", "firefox", "msedge", "brave", "webkit"]
 IDE_KEYWORDS = ["antigravity", "antigravity-ide", "electron", "code", "cursor", "vscode"]
+TRUSTED_PREFIXES = ["/applications", "/usr", "/system", "/library", "c:/program files", "c:/windows/system32"]
 
 def set_simulated_process_activity(total_cpu: float = 98.4, spawn_rate: float = 12.0, is_tmp: bool = True):
     """Allows safe injection of elevated CPU spikes (>95%) and spawn velocity for threat simulations."""
@@ -50,28 +51,39 @@ def collect_process_telemetry():
             raw_cmdline = " ".join(info['cmdline']) if info['cmdline'] else name
             cmdline_normalized = raw_cmdline.replace("\\", "/").lower()
             
-            # Cross-platform check if running from temporary or suspicious paths
-            is_tmp = False
-            for sp in SUSPICIOUS_PATHS:
-                sp_norm = sp.replace("\\", "/").lower()
-                if exe.startswith(sp_norm) or sp_norm in cmdline_normalized:
-                    is_tmp = True
-                    break
-            
-            # Also flag obvious demo payloads
-            if "osentinel_rogue" in cmdline_normalized or "xmrig" in cmdline_normalized or "nc_shell" in cmdline_normalized:
-                is_tmp = True
-                
-            if is_tmp:
-                tmp_execution_count += 1
-                
-            # Differentiate Browser vs Antigravity vs Standard
             is_browser = any(b in name_lower or b in cmdline_normalized for b in BROWSER_KEYWORDS)
             is_ide = any(i in name_lower or i in cmdline_normalized for i in IDE_KEYWORDS)
             
             # Browser threshold 70%, Antigravity threshold 95%
             if is_browser and cpu >= 70.0:
                 browser_high_cpu_count += 1
+            
+            # Accurate check: ONLY flag as temp execution if the EXECUTABLE itself or target script was spawned from temp
+            # Do NOT flag just because a program passes a temp path argument (e.g. --parent_pipe_path /var/.../T/...)
+            is_tmp = False
+            is_trusted_exe = any(exe.startswith(prefix) for prefix in TRUSTED_PREFIXES)
+            
+            if not is_ide and not is_trusted_exe:
+                for sp in SUSPICIOUS_PATHS:
+                    sp_norm = sp.replace("\\", "/").lower()
+                    if exe.startswith(sp_norm):
+                        is_tmp = True
+                        break
+                    # Check first arguments (e.g. python /tmp/malware.py)
+                    parts = raw_cmdline.split()
+                    if len(parts) > 1 and parts[1].replace("\\", "/").lower().startswith(sp_norm):
+                        is_tmp = True
+                        break
+                    elif parts and parts[0].replace("\\", "/").lower().startswith(sp_norm):
+                        is_tmp = True
+                        break
+            
+            # Flag obvious threat simulation / test payloads
+            if "osentinel_rogue" in cmdline_normalized or "xmrig" in cmdline_normalized or "nc_shell" in cmdline_normalized:
+                is_tmp = True
+                
+            if is_tmp:
+                tmp_execution_count += 1
                 
             total_cpu += cpu
             total_mem += mem

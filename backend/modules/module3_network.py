@@ -3,8 +3,10 @@ import time
 from backend.config import SUSPICIOUS_PORTS
 
 _simulated_net_activity = None
-_last_net_io = None
+_last_net_bytes = None
 _last_net_time = time.time()
+
+LOOPBACK_NAMES = ["lo", "lo0", "loopback", "127.0.0.1"]
 
 def set_simulated_network_activity(outbound_conns: int, suspicious_port_flag: int, data_exfil_kb_sec: float):
     global _simulated_net_activity
@@ -15,26 +17,32 @@ def set_simulated_network_activity(outbound_conns: int, suspicious_port_flag: in
         "expire_time": time.time() + 4.0
     }
 
-def get_real_network_io_rate() -> float:
-    """Calculates real network outbound upload rate in KB/sec using psutil.net_io_counters()."""
-    global _last_net_io, _last_net_time
+def get_real_external_network_io_rate() -> float:
+    """Calculates real network outbound upload rate in KB/sec excluding localhost loopback."""
+    global _last_net_bytes, _last_net_time
     now = time.time()
     dt = max(0.2, now - _last_net_time)
     
     try:
-        current_io = psutil.net_io_counters()
-        if _last_net_io is None:
-            _last_net_io = current_io
+        per_nic = psutil.net_io_counters(pernic=True)
+        # Sum only real external network interfaces (exclude lo0, loopback)
+        total_external_sent = 0
+        for nic_name, stats in per_nic.items():
+            if not any(lb in nic_name.lower() for lb in LOOPBACK_NAMES):
+                total_external_sent += stats.bytes_sent
+                
+        if _last_net_bytes is None:
+            _last_net_bytes = total_external_sent
             _last_net_time = now
-            return 3.5 # Normal initial baseline
+            return 2.5
         
-        bytes_sent_delta = max(0, current_io.bytes_sent - _last_net_io.bytes_sent)
+        bytes_sent_delta = max(0, total_external_sent - _last_net_bytes)
         kb_sec = (bytes_sent_delta / 1024.0) / dt
-        _last_net_io = current_io
+        _last_net_bytes = total_external_sent
         _last_net_time = now
         return round(kb_sec, 1)
     except Exception:
-        return 3.5
+        return 2.5
 
 def collect_network_telemetry():
     global _simulated_net_activity
@@ -64,7 +72,7 @@ def collect_network_telemetry():
     connections = []
     outbound_count = 0
     suspicious_flag = 0
-    real_exfil_rate = get_real_network_io_rate()
+    real_exfil_rate = get_real_external_network_io_rate()
     
     try:
         net_conns = psutil.net_connections(kind='inet')
@@ -92,7 +100,6 @@ def collect_network_telemetry():
                 })
     except (psutil.AccessDenied, PermissionError):
         # Fallback for non-root systems on macOS / Ubuntu / Windows:
-        # Check current user process connections
         try:
             for p in psutil.process_iter(['pid', 'name']):
                 try:
@@ -128,6 +135,6 @@ def collect_network_telemetry():
     return {
         "outbound_conn_count": max(outbound_count, len(connections)),
         "suspicious_port_flag": suspicious_flag,
-        "data_exfil_kb_sec": max(real_exfil_rate, 4.2),
+        "data_exfil_kb_sec": max(real_exfil_rate, 2.5),
         "connections": connections[:30]
     }
