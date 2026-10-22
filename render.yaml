@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: osentinel
+    runtime: python
+    buildCommand: "pip install -r requirements.txt && cd frontend && npm install && npm run build && cd .."
+    startCommand: "python3 -m backend.main"
+    envVars:
+      - key: PORT
+        value: 8000
