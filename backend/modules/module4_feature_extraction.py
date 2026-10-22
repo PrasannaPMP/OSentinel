@@ -27,6 +27,7 @@ def extract_feature_vector(proc_telemetry: dict, file_telemetry: dict, net_telem
     
     outbound_conn_count = float(net_telemetry.get("outbound_conn_count", 0))
     suspicious_port_flag = float(net_telemetry.get("suspicious_port_flag", 0))
+    restricted_ip_flag = float(net_telemetry.get("restricted_ip_flag", 0))
     data_exfil_kb_sec = float(net_telemetry.get("data_exfil_kb_sec", 0.0))
     
     spawn_rate = float(proc_telemetry.get("spawn_rate", 0.0))
@@ -39,6 +40,7 @@ def extract_feature_vector(proc_telemetry: dict, file_telemetry: dict, net_telem
         "avg_file_entropy": avg_file_entropy,
         "outbound_conn_count": outbound_conn_count,
         "suspicious_port_flag": suspicious_port_flag,
+        "restricted_ip_flag": restricted_ip_flag,
         "data_exfil_kb_sec": data_exfil_kb_sec,
         "spawn_rate": spawn_rate,
         "file_deletion_rate": file_deletion_rate

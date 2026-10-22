@@ -87,8 +87,82 @@ def init_db():
     );
     """)
 
+    # Table 6: Restricted Networks & IP Access Control
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS restricted_networks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_cidr TEXT UNIQUE NOT NULL,
+        description TEXT,
+        action TEXT DEFAULT 'BLOCK',
+        is_active INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # Seed default restricted networks if table is newly created
+    cursor.execute("SELECT COUNT(*) FROM restricted_networks")
+    if cursor.fetchone()[0] == 0:
+        default_restricted = [
+            ("198.51.100.0/24", "RFC 5737 Test-Net-2 (Restricted External Subnet)", "BLOCK"),
+            ("203.0.113.0/24", "RFC 5737 Test-Net-3 (Restricted Threat Subnet)", "BLOCK"),
+            ("10.99.0.0/16", "Restricted Internal High-Security Zone", "BLOCK"),
+            ("185.220.101.0/24", "Known High-Risk Proxy / Scanner Subnet", "BLOCK")
+        ]
+        cursor.executemany(
+            "INSERT INTO restricted_networks (network_cidr, description, action) VALUES (?, ?, ?)",
+            default_restricted
+        )
+
     conn.commit()
     conn.close()
+
+def get_restricted_networks():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM restricted_networks ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def add_restricted_network(network_cidr: str, description: str = "", action: str = "BLOCK"):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """INSERT INTO restricted_networks (network_cidr, description, action, is_active)
+           VALUES (?, ?, ?, 1)""",
+        (network_cidr.strip(), description.strip(), action.upper())
+    )
+    conn.commit()
+    new_id = cursor.lastrowid
+    cursor.execute("SELECT * FROM restricted_networks WHERE id = ?", (new_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def delete_restricted_network(network_id: int):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM restricted_networks WHERE id = ?", (network_id,))
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
+
+def toggle_restricted_network(network_id: int):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT is_active FROM restricted_networks WHERE id = ?", (network_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+    new_status = 0 if row["is_active"] else 1
+    cursor.execute("UPDATE restricted_networks SET is_active = ? WHERE id = ?", (new_status, network_id))
+    conn.commit()
+    cursor.execute("SELECT * FROM restricted_networks WHERE id = ?", (network_id,))
+    updated_row = cursor.fetchone()
+    conn.close()
+    return dict(updated_row) if updated_row else None
 
 def log_event(event_type, process_count, file_mod_rate, avg_entropy, outbound_conns, risk_score, details_dict):
     conn = get_db()

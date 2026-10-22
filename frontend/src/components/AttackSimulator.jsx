@@ -47,6 +47,14 @@ export default function AttackSimulator({ onSimulateAttack, activeSim }) {
       description: 'Simulates sustained 98.5% CPU spike (above 95% threshold) accompanied by rapid thread spawn velocity originating from an xmrig-like background payload.',
       impact: 'Triggers RULE-MINER-01 (CPU >= 95%), flags critical processor hijack, predicts CryptoMiner threat category.',
       buttonText: 'EXECUTE CRYPTOMINER SPIKE (>95% CPU)'
+    },
+    {
+      id: 'RESTRICTED_NETWORK',
+      title: 'Restricted Network / Blacklisted IP Access',
+      icon: ShieldAlert,
+      description: 'Simulates unauthorized socket communication with a restricted external IP subnet (198.51.100.45:8080 - RFC 5737 Test-Net-2) under strict containment policy.',
+      impact: 'Triggers RULE-NET-RESTRICTED-01, classifies threat as Restricted Network Access, severs socket session, and auto-terminates offending process.',
+      buttonText: 'EXECUTE RESTRICTED IP SIMULATION'
     }
   ];
 

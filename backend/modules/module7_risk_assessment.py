@@ -55,6 +55,11 @@ def calculate_risk_score(rule_result: dict, ml_result: dict) -> dict:
     raw_risk = (WEIGHT_RULE * rule_score) + (WEIGHT_ANOMALY * anomaly_score) + (WEIGHT_CLASSIFIER * classifier_score)
     final_risk_score = min(100.0, max(0.0, raw_risk))
     
+    # Prioritize specific rule categories if triggered
+    triggered_rules = rule_result.get("triggered_rules", [])
+    if any(r.get("id") == "RULE-NET-RESTRICTED-01" for r in triggered_rules):
+        threat_category = "Restricted Network Access"
+    
     if final_risk_score >= RISK_THRESHOLD_HIGH:
         severity = "HIGH"
     elif final_risk_score >= RISK_THRESHOLD_LOW:
@@ -199,6 +204,42 @@ def triage_and_respond(proc_telemetry: dict, file_telemetry: dict, net_telemetry
                     triggered_rules=["RULE-EXEC-01"],
                     threat_category="Malicious Execution"
                 )
+
+    # -------------------------------------------------------------------------
+    # RULE D: Restricted Network / IP Access Interception & Immediate Containment
+    # Terminates unauthorized socket sessions to/from configured restricted networks.
+    # -------------------------------------------------------------------------
+    restricted_conns = [c for c in net_telemetry.get("connections", []) if c.get("is_restricted")]
+    if restricted_conns or net_telemetry.get("restricted_ip_flag", 0) > 0:
+        seen_pids = set()
+        for c in restricted_conns:
+            p_pid = c.get("pid", 0)
+            raddr = c.get("raddr", "Unknown")
+            matched_net = c.get("matched_network", "Restricted Subnet")
+            restr_reason = c.get("restricted_reason", "Restricted Network")
+            
+            if p_pid > 0 and p_pid not in seen_pids:
+                seen_pids.add(p_pid)
+                p_name = "network_process"
+                p_cmd = ""
+                for p in processes:
+                    if p.get("pid") == p_pid:
+                        p_name = p.get("name", "network_process")
+                        p_cmd = p.get("cmdline", "")
+                        break
+                        
+                if not is_ide_process(p_name, p_cmd):
+                    kill_res = terminate_process_safe(p_pid, p_name, cmdline=p_cmd, force=True)
+                    if kill_res["success"]:
+                        terminated_processes.append(f"Restricted Network Socket on '{p_name}' (PID {p_pid} -> {raddr})")
+                        create_alert(
+                            severity="HIGH",
+                            title=f"Restricted Network Connection Severed & Auto-Terminated (PID {p_pid})",
+                            description=f"Process '{p_name}' (PID {p_pid}) attempted unauthorized communication with restricted network {matched_net} ({raddr} - {restr_reason}). Policy: AUTO-BLOCK. Connection severed and process terminated.",
+                            risk_score=90.0,
+                            triggered_rules=["RULE-NET-RESTRICTED-01"],
+                            threat_category="Restricted Network Access"
+                        )
 
     incident_id = None
     incident_code = None

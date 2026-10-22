@@ -54,5 +54,13 @@
     "condition": "cpu_percent >= 70 and spawn_rate >= 2",
     "weight": 55,
     "description": "Web browser process (Safari or Chrome) exceeding 70% CPU threshold, indicating possible in-browser cryptominer or runaway script."
+  },
+  {
+    "id": "RULE-NET-RESTRICTED-01",
+    "name": "Unauthorized Communication with Restricted Network",
+    "category": "Restricted Network Access",
+    "condition": "restricted_ip_flag >= 1",
+    "weight": 85,
+    "description": "Active socket communication intercepted to/from a restricted IP subnet or blacklisted network address."
   }
 ]

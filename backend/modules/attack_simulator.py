@@ -48,6 +48,21 @@ def trigger_attack_simulation(attack_type: str) -> dict:
             "duration": 5.0,
             "details": "Simulated sustained 98.5% CPU spike (>95%) with miner thread pool spawning from /tmp/xmrig."
         }
+    elif attack_type_upper in ["RESTRICTED_NETWORK", "RESTRICTED_IP"]:
+        set_simulated_process_activity(total_cpu=18.0, spawn_rate=2.0, is_tmp=False)
+        set_simulated_network_activity(
+            outbound_conns=3,
+            suspicious_port_flag=0,
+            data_exfil_kb_sec=42.0,
+            restricted_ip_flag=1,
+            simulated_raddr="198.51.100.45:8080"
+        )
+        _active_simulation = {
+            "type": "Restricted Network Access Attempt",
+            "started_at": timestamp,
+            "duration": 5.0,
+            "details": "Simulated unauthorized socket connection to restricted IP subnet 198.51.100.45:8080 (RFC 5737 Test-Net-2)."
+        }
     else:
         return {"success": False, "message": f"Unknown attack simulation type: {attack_type}"}
         

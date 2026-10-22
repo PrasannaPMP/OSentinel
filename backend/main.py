@@ -2,6 +2,7 @@ import asyncio
 import json
 import time
 import threading
+import ipaddress
 from typing import List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +15,11 @@ from backend.database import (
     get_incidents,
     get_alerts,
     update_incident_status,
-    create_incident
+    create_incident,
+    get_restricted_networks,
+    add_restricted_network,
+    delete_restricted_network,
+    toggle_restricted_network
 )
 from backend.modules.module1_process import collect_process_telemetry
 from backend.modules.module2_file import collect_file_telemetry
@@ -190,6 +195,48 @@ def contain_incident(req: ContainRequest):
 def retrain_models(background_tasks: BackgroundTasks):
     background_tasks.add_task(train_and_save_models)
     return {"success": True, "message": "Model retraining job queued in background."}
+
+# --- RESTRICTED NETWORKS & IP ACCESS CONTROL ENDPOINTS ---
+
+class RestrictedNetworkRequest(BaseModel):
+    network_cidr: str
+    description: str = ""
+    action: str = "BLOCK"
+
+@app.get("/api/network/restricted")
+def fetch_restricted_networks():
+    return get_restricted_networks()
+
+@app.post("/api/network/restricted")
+def create_restricted_network(req: RestrictedNetworkRequest):
+    cidr_clean = req.network_cidr.strip()
+    if not cidr_clean:
+        raise HTTPException(status_code=400, detail="Network IP or CIDR cannot be empty.")
+    try:
+        # Validate CIDR or IP (accepts e.g. 192.168.1.100 or 10.0.0.0/16)
+        ipaddress.ip_network(cidr_clean, strict=False)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid IP address or CIDR notation: {e}")
+        
+    try:
+        created = add_restricted_network(cidr_clean, req.description, req.action)
+        return {"success": True, "network": created}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to add restricted network (may already exist): {e}")
+
+@app.delete("/api/network/restricted/{network_id}")
+def remove_restricted_network(network_id: int):
+    ok = delete_restricted_network(network_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Restricted network entry not found.")
+    return {"success": True, "message": f"Restricted network {network_id} deleted."}
+
+@app.post("/api/network/restricted/{network_id}/toggle")
+def toggle_network(network_id: int):
+    updated = toggle_restricted_network(network_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Restricted network entry not found.")
+    return {"success": True, "network": updated}
 
 # --- WEBSOCKET ENDPOINT ---
 

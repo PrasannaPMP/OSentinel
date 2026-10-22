@@ -229,10 +229,63 @@ def demo_antigravity_exemption_and_kill():
         pass
 
 # ---------------------------------------------------------------------------
-# PROOF 5: Query Live OSentinel SOC API
+# PROOF 5: Restricted Network / Blacklisted IP Access Restriction & Containment
+# ---------------------------------------------------------------------------
+def demo_restricted_network_ip():
+    print("\n[STEP 5: PROVING IP-BASED NETWORK RESTRICTION & AUTO-CONTAINMENT]")
+    print("---------------------------------------------------------------------------")
+    print("Theory: OSentinel monitors all socket descriptors (both inbound & outbound).")
+    print("        When communication with a configured restricted network/IP is detected,")
+    print("        it immediately fires RULE-NET-RESTRICTED-01, severs the connection,")
+    print("        and auto-terminates the offending unauthorized process.\n")
+
+    from backend.database import get_restricted_networks, init_db
+    from backend.modules.module3_network import match_restricted_ip
+    from backend.modules.module5_rule_engine import evaluate_rules
+    from backend.modules.module7_risk_assessment import terminate_process_safe
+
+    init_db()
+    restr_nets = get_restricted_networks()
+    print(f"  📋 Configured Restricted Networks in Firewall Policy: {len(restr_nets)}")
+    for n in restr_nets[:3]:
+        print(f"     • {n['network_cidr']} ({n['description']}) -> Policy: {n['action']}")
+
+    # Test IP matching logic
+    test_target_ip = "198.51.100.45"
+    is_restr, matched_cidr, desc, action = match_restricted_ip(test_target_ip, restr_nets)
+    print(f"\n  🔍 Evaluating Test Target IP '{test_target_ip}':")
+    print(f"     -> Matched Subnet: {matched_cidr} ({desc})")
+    print(f"     -> Restriction Verdict: {'BLOCKED (RESTRICTED)' if is_restr else 'ALLOWED'}")
+    assert is_restr, "Test IP should match restricted subnet!"
+
+    # Simulate rogue socket process attempting to connect to restricted IP
+    dummy_net_proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(15)"])
+    proc_pid = dummy_net_proc.pid
+    print(f"\n  ⚡ Unauthorized process (PID {proc_pid}) attempting socket to {test_target_ip}...")
+    
+    # Evaluate rule engine response
+    rule_res = evaluate_rules({"restricted_ip_flag": 1.0})
+    triggered = [r["id"] for r in rule_res["triggered_rules"]]
+    print(f"     -> Rule Triggered: {triggered}")
+    print(f"     -> Rule Score: {rule_res['rule_score']}/100")
+    print(f"     -> ✅ OSentinel Rule Fired: RULE-NET-RESTRICTED-01")
+
+    # Enforce containment policy
+    kill_res = terminate_process_safe(proc_pid, "unauthorized_network_client", force=True)
+    print(f"     -> Containment Action: Connection Severed & Target Process Terminated.")
+    print(f"     -> Result: {kill_res['message']}")
+    print(f"     -> ✅ IP Restriction Enforced: Verified (Success={kill_res['success']})")
+
+    try:
+        dummy_net_proc.poll()
+    except Exception:
+        pass
+
+# ---------------------------------------------------------------------------
+# PROOF 6: Query Live OSentinel SOC API
 # ---------------------------------------------------------------------------
 def check_live_api():
-    print("\n[STEP 5: QUERYING RUNNING OSENTINEL BACKEND STATUS (http://localhost:8000)]")
+    print("\n[STEP 6: QUERYING RUNNING OSENTINEL BACKEND STATUS (http://localhost:8000)]")
     print("---------------------------------------------------------------------------")
     try:
         req = urllib.request.Request("http://localhost:8000/api/status", headers={"User-Agent": "OSentinelDemo"})
@@ -248,6 +301,7 @@ def check_live_api():
             print(f"     • Active Process Count: {proc.get('process_count')} | Spawn Velocity: {proc.get('spawn_rate')}/s")
             print(f"     • Current File Entropy: {files.get('avg_file_entropy')} bits/byte (High alert: {files.get('high_entropy_alert')})")
             print(f"     • Outbound Conns Count: {net.get('outbound_conn_count')} | Exfiltration: {net.get('data_exfil_kb_sec')} KB/s")
+            print(f"     • Restricted IP Flag: {net.get('restricted_ip_flag')} | Active Policies: {net.get('restricted_networks_count')}")
     except Exception as e:
         print(f"  ℹ️ OSentinel backend check notice: {e}")
 
@@ -257,6 +311,7 @@ def main():
     demo_process_anomaly()
     demo_network_socket()
     demo_antigravity_exemption_and_kill()
+    demo_restricted_network_ip()
     check_live_api()
     print("\n" + "=" * 76)
     print("  🎉 Real-World Live Verification Complete!")

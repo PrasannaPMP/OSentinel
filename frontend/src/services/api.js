@@ -60,6 +60,45 @@ export async function retrainMLModels() {
   return res.json();
 }
 
+export async function fetchRestrictedNetworks() {
+  const res = await fetch(`${API_BASE}/network/restricted`);
+  if (!res.ok) throw new Error("Failed to fetch restricted networks");
+  return res.json();
+}
+
+export async function addRestrictedNetwork(networkCidr, description, action = "BLOCK") {
+  const res = await fetch(`${API_BASE}/network/restricted`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      network_cidr: networkCidr,
+      description: description,
+      action: action
+    })
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || "Failed to add restricted network");
+  }
+  return res.json();
+}
+
+export async function deleteRestrictedNetwork(networkId) {
+  const res = await fetch(`${API_BASE}/network/restricted/${networkId}`, {
+    method: "DELETE"
+  });
+  if (!res.ok) throw new Error("Failed to delete restricted network");
+  return res.json();
+}
+
+export async function toggleRestrictedNetwork(networkId) {
+  const res = await fetch(`${API_BASE}/network/restricted/${networkId}/toggle`, {
+    method: "POST"
+  });
+  if (!res.ok) throw new Error("Failed to toggle restricted network");
+  return res.json();
+}
+
 export function connectWebSocket(onMessage, onError, onClose) {
   const socket = new WebSocket(WS_URL);
 
