@@ -249,6 +249,8 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.sleep(POLL_INTERVAL_SEC)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+    except Exception:
+        manager.disconnect(websocket)
 # --- STATIC FRONTEND ASSETS FOR PRODUCTION DEPLOYMENT ---
 from fastapi.staticfiles import StaticFiles
 from backend.config import PROJECT_ROOT

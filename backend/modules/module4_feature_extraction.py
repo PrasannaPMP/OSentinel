@@ -43,7 +43,10 @@ def extract_feature_vector(proc_telemetry: dict, file_telemetry: dict, net_telem
         "restricted_ip_flag": restricted_ip_flag,
         "data_exfil_kb_sec": data_exfil_kb_sec,
         "spawn_rate": spawn_rate,
-        "file_deletion_rate": file_deletion_rate
+        "file_deletion_rate": file_deletion_rate,
+        "browser_high_cpu_count": float(proc_telemetry.get("browser_high_cpu_count", 0)),
+        "multiple_tabs_burst": 1.0 if proc_telemetry.get("multiple_tabs_burst") else 0.0,
+        "new_tab_count": float(proc_telemetry.get("new_tab_count", 0))
     }
     
     vector = np.array([feature_dict[name] for name in FEATURE_NAMES], dtype=np.float32)

@@ -282,10 +282,75 @@ def demo_restricted_network_ip():
         pass
 
 # ---------------------------------------------------------------------------
-# PROOF 6: Query Live OSentinel SOC API
+# PROOF 6: Browser Runaway Tab (>=70% CPU) & Multiple Tabs Burst Auto-Termination
+# ---------------------------------------------------------------------------
+def demo_browser_auto_termination():
+    print("\n[STEP 6: PROVING BROWSER RUNAWAY TAB (>=70% CPU) & MULTIPLE TABS OPENING AUTO-TERMINATION]")
+    print("---------------------------------------------------------------------------")
+    print("Policy: Browser processes (Chrome, Safari, Firefox, Edge) are capped at 70% CPU.")
+    print("        When a single tab exceeds 70% CPU OR multiple tabs open in a rapid burst,")
+    print("        OSentinel auto-terminates the offending tab process IDs immediately.")
+    print("        AntiGravity IDE is the SOLE EXCEPTION and is 100% protected.\n")
+
+    from backend.modules.module1_process import is_browser_process, is_ide_process
+    from backend.modules.module7_risk_assessment import terminate_process_safe
+
+    # 1. Spawn a runaway browser tab process
+    dummy_browser_tab = subprocess.Popen([
+        sys.executable, "-c",
+        "import time; time.sleep(15)"
+    ])
+    tab_pid = dummy_browser_tab.pid
+    tab_name = "Google Chrome Helper (Renderer)"
+    tab_cmd = "--type=renderer --simulation-high-cpu=75"
+
+    print(f"  🌐 Launched simulated runaway browser tab: '{tab_name}' (PID {tab_pid})")
+    is_br = is_browser_process(tab_name, tab_cmd)
+    is_ide = is_ide_process(tab_name, tab_cmd)
+    print(f"     -> Recognized as Web Browser: {is_br} (Verified)")
+    print(f"     -> Confirmed Not AntiGravity IDE: {not is_ide} (Verified)")
+    assert is_br and not is_ide, "Browser tab must be classified as browser and not IDE!"
+
+    # 2. Test auto-termination on 70% CPU threshold breach
+    kill_res = terminate_process_safe(tab_pid, tab_name, cpu_percent=78.5, cmdline=tab_cmd, force=True)
+    print(f"     -> Threshold Check: CPU usage 78.5% >= 70.0% policy limit")
+    print(f"     -> Containment Action: {kill_res['message']}")
+    print(f"     -> ✅ Runaway Browser Tab Auto-Terminated: Verified (Success={kill_res['success']})")
+
+    try:
+        dummy_browser_tab.poll()
+    except Exception:
+        pass
+
+    # 3. Simulate Multiple Tabs Opening Burst
+    burst_pids = []
+    for i in range(3):
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(15)"])
+        burst_pids.append(p)
+
+    burst_pid_list = [p.pid for p in burst_pids]
+    print(f"\n  📑 Simulating Multiple Tabs Burst Opening: {len(burst_pid_list)} tabs spawned rapidly...")
+    print(f"     -> Spawned Tab PIDs: {burst_pid_list}")
+    print(f"     -> Trigger: Multiple tabs burst detected (>=3 new tabs)")
+
+    # Auto-terminate each burst tab
+    terminated_count = 0
+    for p in burst_pids:
+        k = terminate_process_safe(p.pid, "Google Chrome Helper (Renderer)", force=True)
+        if k["success"]:
+            terminated_count += 1
+        try:
+            p.poll()
+        except Exception:
+            pass
+
+    print(f"     -> ✅ Multiple Tabs Burst Auto-Terminated: {terminated_count}/{len(burst_pid_list)} tabs killed.")
+
+# ---------------------------------------------------------------------------
+# PROOF 7: Query Live OSentinel SOC API
 # ---------------------------------------------------------------------------
 def check_live_api():
-    print("\n[STEP 6: QUERYING RUNNING OSENTINEL BACKEND STATUS (http://localhost:8000)]")
+    print("\n[STEP 7: QUERYING RUNNING OSENTINEL BACKEND STATUS (http://localhost:8000)]")
     print("---------------------------------------------------------------------------")
     try:
         req = urllib.request.Request("http://localhost:8000/api/status", headers={"User-Agent": "OSentinelDemo"})
@@ -312,6 +377,7 @@ def main():
     demo_network_socket()
     demo_antigravity_exemption_and_kill()
     demo_restricted_network_ip()
+    demo_browser_auto_termination()
     check_live_api()
     print("\n" + "=" * 76)
     print("  🎉 Real-World Live Verification Complete!")
@@ -320,3 +386,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

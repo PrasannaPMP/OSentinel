@@ -1,6 +1,6 @@
 import time
 import threading
-from backend.modules.module1_process import set_simulated_process_activity
+from backend.modules.module1_process import set_simulated_process_activity, set_simulated_browser_activity
 from backend.modules.module2_file import set_simulated_file_activity
 from backend.modules.module3_network import set_simulated_network_activity
 
@@ -47,6 +47,14 @@ def trigger_attack_simulation(attack_type: str) -> dict:
             "started_at": timestamp,
             "duration": 5.0,
             "details": "Simulated sustained 98.5% CPU spike (>95%) with miner thread pool spawning from /tmp/xmrig."
+        }
+    elif attack_type_upper in ["BROWSER", "BROWSER_RUNAWAY", "BROWSER_TABS"]:
+        set_simulated_browser_activity(cpu=78.5, tab_count=4)
+        _active_simulation = {
+            "type": "Browser Cryptojacking & Runaway Tabs Burst",
+            "started_at": timestamp,
+            "duration": 5.0,
+            "details": "Simulated runaway browser tab exceeding 70% threshold (78.5% CPU) and multiple tabs burst (4 tabs). Offending tab auto-terminated."
         }
     elif attack_type_upper in ["RESTRICTED_NETWORK", "RESTRICTED_IP"]:
         set_simulated_process_activity(total_cpu=18.0, spawn_rate=2.0, is_tmp=False)

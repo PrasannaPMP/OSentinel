@@ -51,9 +51,17 @@
     "id": "RULE-BROWSER-01",
     "name": "Browser Excessive CPU Spike (Safari / Chrome >= 70%)",
     "category": "Browser Cryptojacking",
-    "condition": "cpu_percent >= 70 and spawn_rate >= 2",
-    "weight": 55,
+    "condition": "browser_high_cpu_count >= 1",
+    "weight": 60,
     "description": "Web browser process (Safari or Chrome) exceeding 70% CPU threshold, indicating possible in-browser cryptominer or runaway script."
+  },
+  {
+    "id": "RULE-BROWSER-TABS-01",
+    "name": "Multiple Browser Tabs Opening Burst",
+    "category": "Browser Runaway Tabs",
+    "condition": "multiple_tabs_burst == 1 or new_tab_count >= 3",
+    "weight": 65,
+    "description": "Excessive multiple browser tabs opening burst detected. Offending newly opened tabs auto-terminated."
   },
   {
     "id": "RULE-NET-RESTRICTED-01",
