@@ -249,8 +249,13 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.sleep(POLL_INTERVAL_SEC)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-    except Exception:
-        manager.disconnect(websocket)
+# --- STATIC FRONTEND ASSETS FOR PRODUCTION DEPLOYMENT ---
+from fastapi.staticfiles import StaticFiles
+from backend.config import PROJECT_ROOT
+
+FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
 
 if __name__ == "__main__":
     import uvicorn

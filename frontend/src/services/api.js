@@ -1,7 +1,15 @@
-// REST & WebSocket client service for OSentinel Backend
+const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+const wsProtocol = isHttps ? 'wss:' : 'ws:';
+const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+const host = typeof window !== 'undefined' ? window.location.host : 'localhost:8000';
 
-const API_BASE = "http://localhost:8000/api";
-const WS_URL = "ws://localhost:8000/ws/live";
+const API_BASE = typeof window !== 'undefined' && window.location.port === '5173'
+  ? `http://${hostname}:8000/api`
+  : `/api`;
+
+const WS_URL = typeof window !== 'undefined' && window.location.port === '5173'
+  ? `ws://${hostname}:8000/ws/live`
+  : `${wsProtocol}//${host}/ws/live`;
 
 export async function fetchSystemStatus() {
   const res = await fetch(`${API_BASE}/status`);
