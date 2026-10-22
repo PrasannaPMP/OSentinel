@@ -26,16 +26,21 @@ def load_ml_models():
             return False
     return False
 
+def iso_threshold(raw_score: float) -> float:
+    """Fallback mapping for models trained before calibration was stored."""
+    return 50.0 + (_iso_forest.offset_ - raw_score) * 200.0
+
+
 def run_ml_inference(feature_vector: np.ndarray, feature_dict: dict) -> dict:
     global _iso_forest, _rf_classifier, _meta_info
     
     if _iso_forest is None or _rf_classifier is None:
         if not load_ml_models():
-            # Fallback heuristic if models not trained yet
+            # No model yet: contribute nothing rather than a made-up score
             return {
-                "anomaly_score": 10.0,
+                "anomaly_score": 0.0,
                 "predicted_category": "Normal",
-                "confidence": 0.95,
+                "confidence": 0.0,
                 "top_features": [],
                 "model_status": "NOT_TRAINED"
             }
@@ -46,8 +51,14 @@ def run_ml_inference(feature_vector: np.ndarray, feature_dict: dict) -> dict:
     # 1. Unsupervised Anomaly Score via Isolation Forest
     # score_samples returns negative anomaly score (more negative = more anomalous)
     raw_score = _iso_forest.score_samples(X_sample)[0]
-    # Normalize raw score (-0.8 to 0.2) into (0 to 100) range
-    anomaly_score = max(0.0, min(100.0, (0.15 - raw_score) * 120.0))
+    calib = (_meta_info or {}).get("anomaly_calibration")
+    if calib and calib["normal_median"] > calib["threshold"]:
+        # median normal behaviour -> 0, model threshold -> 50, twice as far -> 100
+        span = calib["normal_median"] - calib["threshold"]
+        anomaly_score = (calib["normal_median"] - raw_score) / span * 50.0
+    else:
+        anomaly_score = (iso_threshold(raw_score))
+    anomaly_score = max(0.0, min(100.0, anomaly_score))
     
     # 2. Supervised Threat Category Prediction via Random Forest
     probs = _rf_classifier.predict_proba(X_sample)[0]
@@ -84,11 +95,13 @@ def get_ml_metrics():
     global _meta_info
     if _meta_info is None:
         load_ml_models()
+    # No trained model: report that honestly instead of showing made-up numbers
     return _meta_info or {
-        "accuracy": 0.985,
-        "precision": 0.982,
-        "recall": 0.984,
-        "f1_score": 0.983,
+        "accuracy": None,
+        "precision": None,
+        "recall": None,
+        "f1_score": None,
         "feature_importances": {},
-        "labels": ["Normal", "Ransomware", "Reverse Shell C2", "Data Exfiltration", "CryptoMiner"]
+        "labels": ["Normal", "Ransomware", "Reverse Shell C2", "Data Exfiltration", "CryptoMiner"],
+        "model_status": "NOT_TRAINED"
     }

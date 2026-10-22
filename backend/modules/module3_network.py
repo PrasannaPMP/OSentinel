@@ -1,4 +1,5 @@
 import psutil
+import socket
 import time
 import ipaddress
 from backend.config import SUSPICIOUS_PORTS
@@ -9,6 +10,7 @@ _last_net_bytes = None
 _last_net_time = time.time()
 
 LOOPBACK_NAMES = ["lo", "lo0", "loopback", "127.0.0.1"]
+SIM_CONN_PID = -9821  # negative: can never match a real process
 
 def extract_ip_address(addr_str: str) -> str:
     """Extracts raw IP address without port or interface identifier."""
@@ -85,7 +87,7 @@ def get_real_external_network_io_rate() -> float:
         if _last_net_bytes is None:
             _last_net_bytes = total_external_sent
             _last_net_time = now
-            return 2.5
+            return 0.0
         
         bytes_sent_delta = max(0, total_external_sent - _last_net_bytes)
         kb_sec = (bytes_sent_delta / 1024.0) / dt
@@ -93,38 +95,91 @@ def get_real_external_network_io_rate() -> float:
         _last_net_time = now
         return round(kb_sec, 1)
     except Exception:
-        return 2.5
+        return 0.0
+
+def _is_loopback(ip: str) -> bool:
+    try:
+        return ipaddress.ip_address(ip).is_loopback
+    except ValueError:
+        return False
+
+
+def _analyse_connection(conn, pid, restricted_list, state):
+    """Classifies one socket and updates the aggregate counters in `state`."""
+    laddr = f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else ""
+    raddr = f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else ""
+
+    is_susp = False
+    if conn.raddr:
+        if not _is_loopback(conn.raddr.ip) and conn.status == "ESTABLISHED":
+            state["outbound"] += 1
+        if conn.raddr.port in SUSPICIOUS_PORTS:
+            is_susp = True
+    # A local LISTENER on a threat port (e.g. a reverse-shell handler on 4444)
+    if conn.laddr and conn.status == "LISTEN" and conn.laddr.port in SUSPICIOUS_PORTS:
+        is_susp = True
+    if is_susp:
+        state["suspicious"] = 1
+
+    # Only the REMOTE address is matched against restricted networks. Matching the
+    # local address would flag every process if the user's own LAN were listed.
+    is_restr, restr_cidr, restr_desc, restr_act = (False, "", "", "")
+    if conn.raddr:
+        is_restr, restr_cidr, restr_desc, restr_act = match_restricted_ip(conn.raddr.ip, restricted_list)
+    if is_restr:
+        state["restricted"] = 1
+        state["restricted_count"] += 1
+
+    if conn.status in ["ESTABLISHED", "LISTEN", "SYN_SENT"]:
+        state["connections"].append({
+            "fd": getattr(conn, "fd", 0) or 0,
+            "family": "IPv4" if conn.family == socket.AF_INET else "IPv6",
+            "type": "TCP" if conn.type == socket.SOCK_STREAM else "UDP",
+            "laddr": laddr,
+            "raddr": raddr,
+            "status": conn.status,
+            "pid": pid or 0,
+            "is_suspicious": is_susp,
+            "is_restricted": is_restr,
+            "matched_network": restr_cidr if is_restr else "",
+            "restricted_reason": restr_desc if is_restr else "",
+            "restriction_action": restr_act if is_restr else "",
+            "simulated": False,
+        })
+
 
 def collect_network_telemetry():
     global _simulated_net_activity
-    
+
     current_time = time.time()
-    restricted_list = []
     try:
         restricted_list = get_restricted_networks()
     except Exception:
         restricted_list = []
-    
+
     active_restricted_count = len([r for r in restricted_list if r.get("is_active", 1)])
-    
-    # Check if UI web simulation is active
+
+    # Web simulation (synthetic numbers only)
     if _simulated_net_activity and current_time < _simulated_net_activity["expire_time"]:
         sim_restricted = bool(_simulated_net_activity.get("restricted_ip_flag", 0))
-        sim_raddr = _simulated_net_activity.get("simulated_raddr") or ("198.51.100.45:8080" if sim_restricted else ("127.0.0.1:4444" if _simulated_net_activity["suspicious_port_flag"] else "93.184.216.34:443"))
-        
+        sim_raddr = _simulated_net_activity.get("simulated_raddr") or (
+            "198.51.100.45:8080" if sim_restricted else
+            ("127.0.0.1:4444" if _simulated_net_activity["suspicious_port_flag"] else "93.184.216.34:443"))
+
         sim_conn = {
             "fd": 12, "family": "IPv4", "type": "TCP",
             "laddr": "127.0.0.1:49210",
             "raddr": sim_raddr,
             "status": "ESTABLISHED",
-            "pid": 9821,
+            "pid": SIM_CONN_PID,
             "is_suspicious": bool(_simulated_net_activity["suspicious_port_flag"]),
             "is_restricted": sim_restricted,
             "matched_network": "198.51.100.0/24" if sim_restricted else "",
             "restricted_reason": "RFC 5737 Test-Net-2 (Restricted External Subnet)" if sim_restricted else "",
-            "restriction_action": "BLOCK" if sim_restricted else ""
+            "restriction_action": "BLOCK" if sim_restricted else "",
+            "simulated": True,
         }
-        
+
         return {
             "outbound_conn_count": _simulated_net_activity["outbound_conns"],
             "suspicious_port_flag": _simulated_net_activity["suspicious_port_flag"],
@@ -132,108 +187,41 @@ def collect_network_telemetry():
             "restricted_conns_count": 1 if sim_restricted else 0,
             "data_exfil_kb_sec": _simulated_net_activity["data_exfil_kb_sec"],
             "connections": [sim_conn],
-            "restricted_networks_count": active_restricted_count
+            "restricted_networks_count": active_restricted_count,
+            "simulated": True,
         }
-    else:
-        _simulated_net_activity = None
+    _simulated_net_activity = None
 
-    connections = []
-    outbound_count = 0
-    suspicious_flag = 0
-    restricted_flag = 0
-    restricted_count = 0
-    real_exfil_rate = get_real_external_network_io_rate()
-    
+    state = {"outbound": 0, "suspicious": 0, "restricted": 0, "restricted_count": 0, "connections": []}
+    upload_rate = get_real_external_network_io_rate()
+
     try:
-        net_conns = psutil.net_connections(kind='inet')
-        for conn in net_conns:
-            laddr = f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else ""
-            raddr = f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else ""
-            
-            is_susp = 0
-            if conn.raddr:
-                outbound_count += 1
-                if conn.raddr.port in SUSPICIOUS_PORTS:
-                    is_susp = 1
-                    suspicious_flag = 1
-            
-            # Check restricted IP networks
-            is_restr, restr_cidr, restr_desc, restr_act = match_restricted_ip(conn.raddr.ip if conn.raddr else "", restricted_list)
-            if not is_restr and conn.laddr:
-                is_restr, restr_cidr, restr_desc, restr_act = match_restricted_ip(conn.laddr.ip, restricted_list)
-                
-            if is_restr:
-                restricted_flag = 1
-                restricted_count += 1
-                    
-            if conn.status in ["ESTABLISHED", "LISTEN", "SYN_SENT"]:
-                connections.append({
-                    "fd": conn.fd if hasattr(conn, 'fd') else 0,
-                    "family": "IPv4" if conn.family == 2 else "IPv6",
-                    "type": "TCP" if conn.type == 1 else "UDP",
-                    "laddr": laddr,
-                    "raddr": raddr,
-                    "status": conn.status,
-                    "pid": conn.pid or 0,
-                    "is_suspicious": bool(is_susp),
-                    "is_restricted": is_restr,
-                    "matched_network": restr_cidr if is_restr else "",
-                    "restricted_reason": restr_desc if is_restr else "",
-                    "restriction_action": restr_act if is_restr else ""
-                })
+        for conn in psutil.net_connections(kind='inet'):
+            _analyse_connection(conn, conn.pid, restricted_list, state)
     except (psutil.AccessDenied, PermissionError):
-        # Fallback for non-root systems on macOS / Ubuntu / Windows:
-        try:
-            for p in psutil.process_iter(['pid', 'name']):
-                try:
-                    for c in p.connections(kind='inet'):
-                        laddr = f"{c.laddr.ip}:{c.laddr.port}" if c.laddr else ""
-                        raddr = f"{c.raddr.ip}:{c.raddr.port}" if c.raddr else ""
-                        is_susp = 0
-                        if c.raddr:
-                            outbound_count += 1
-                            if c.raddr.port in SUSPICIOUS_PORTS:
-                                is_susp = 1
-                                suspicious_flag = 1
-                                
-                        is_restr, restr_cidr, restr_desc, restr_act = match_restricted_ip(c.raddr.ip if c.raddr else "", restricted_list)
-                        if not is_restr and c.laddr:
-                            is_restr, restr_cidr, restr_desc, restr_act = match_restricted_ip(c.laddr.ip, restricted_list)
-                            
-                        if is_restr:
-                            restricted_flag = 1
-                            restricted_count += 1
-
-                        if c.status in ["ESTABLISHED", "LISTEN"]:
-                            connections.append({
-                                "fd": 0,
-                                "family": "IPv4",
-                                "type": "TCP",
-                                "laddr": laddr,
-                                "raddr": raddr,
-                                "status": c.status,
-                                "pid": p.pid,
-                                "is_suspicious": bool(is_susp),
-                                "is_restricted": is_restr,
-                                "matched_network": restr_cidr if is_restr else "",
-                                "restricted_reason": restr_desc if is_restr else "",
-                                "restriction_action": restr_act if is_restr else ""
-                            })
-                except Exception:
-                    continue
-                if len(connections) >= 30:
-                    break
-        except Exception:
-            pass
+        # Non-root fallback (macOS): enumerate per process
+        for p in psutil.process_iter(['pid']):
+            try:
+                for c in p.net_connections(kind='inet') if hasattr(p, "net_connections") else p.connections(kind='inet'):
+                    _analyse_connection(c, p.pid, restricted_list, state)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, PermissionError):
+                continue
+            except Exception:
+                continue
     except Exception:
         pass
-        
+
+    # Keep suspicious/restricted sockets visible even if the list is long
+    conns = sorted(state["connections"], key=lambda c: (not c["is_restricted"], not c["is_suspicious"]))
+
     return {
-        "outbound_conn_count": max(outbound_count, len(connections)),
-        "suspicious_port_flag": suspicious_flag,
-        "restricted_ip_flag": restricted_flag,
-        "restricted_conns_count": restricted_count,
-        "data_exfil_kb_sec": max(real_exfil_rate, 2.5),
-        "connections": connections[:40],
-        "restricted_networks_count": active_restricted_count
+        "outbound_conn_count": state["outbound"],
+        "suspicious_port_flag": state["suspicious"],
+        "restricted_ip_flag": state["restricted"],
+        "restricted_conns_count": state["restricted_count"],
+        # Machine-wide upload rate (psutil cannot attribute bytes to a process)
+        "data_exfil_kb_sec": upload_rate,
+        "connections": conns[:40],
+        "restricted_networks_count": active_restricted_count,
+        "simulated": False,
     }

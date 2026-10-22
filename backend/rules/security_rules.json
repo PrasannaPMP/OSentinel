@@ -53,15 +53,15 @@
     "category": "Browser Cryptojacking",
     "condition": "browser_high_cpu_count >= 1",
     "weight": 60,
-    "description": "Web browser process (Safari or Chrome) exceeding 70% CPU threshold, indicating possible in-browser cryptominer or runaway script."
+    "description": "Web browser process (Safari or Chrome) exceeding 70% CPU for a sustained period (~6s), indicating possible in-browser cryptominer or runaway script."
   },
   {
     "id": "RULE-BROWSER-TABS-01",
     "name": "Multiple Browser Tabs Opening Burst",
     "category": "Browser Runaway Tabs",
-    "condition": "multiple_tabs_burst == 1 or new_tab_count >= 3",
+    "condition": "multiple_tabs_burst == 1",
     "weight": 65,
-    "description": "Excessive multiple browser tabs opening burst detected. Offending newly opened tabs auto-terminated."
+    "description": "Burst of many new browser tab processes detected in one polling window. Offending newly opened tabs auto-terminated."
   },
   {
     "id": "RULE-NET-RESTRICTED-01",

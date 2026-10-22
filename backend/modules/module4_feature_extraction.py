@@ -17,8 +17,8 @@ FEATURE_NAMES = [
 def extract_feature_vector(proc_telemetry: dict, file_telemetry: dict, net_telemetry: dict) -> dict:
     """Extracts a structured numerical feature dictionary and NumPy array from raw telemetry."""
     
-    cpu_percent = float(proc_telemetry.get("total_cpu_percent", 0.0))
-    mem_percent = float(proc_telemetry.get("avg_cpu_percent", 0.0)) # Memory or avg load
+    cpu_percent = float(proc_telemetry.get("total_cpu_percent", 0.0))  # 0-100% of whole machine
+    mem_percent = float(proc_telemetry.get("mem_percent", 0.0))        # system RAM usage %
     is_tmp_execution = 1.0 if proc_telemetry.get("tmp_execution_count", 0) > 0 else 0.0
     
     file_mod_rate = float(file_telemetry.get("file_mod_rate", 0.0))

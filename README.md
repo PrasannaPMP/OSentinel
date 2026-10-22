@@ -142,6 +142,22 @@ python3 demo_real_life_threat.py
 
 ---
 
+## ⚙️ Configuration & Safety Notes
+
+| Setting | Default | Purpose |
+| :--- | :--- | :--- |
+| `OSENTINEL_HOST` | `127.0.0.1` | API binds to localhost only, so other devices on your Wi-Fi cannot call `/api/contain`. Set to `0.0.0.0` only for cloud deploys. |
+| `OSENTINEL_CORS_ORIGINS` | `localhost:5173`, `localhost:8000` | Browser origins allowed to call the API. |
+| `OSENTINEL_WATCH_DIRS` | *(sandbox only)* | Extra folders to watch for ransomware-style writes (separate with `:` on macOS/Linux, `;` on Windows). |
+
+- **Models train automatically** on first start if `backend/models/` is empty.
+- **Train on your own machine's baseline:** `python -m backend.modules.train_models --baseline 300` records 5 minutes of real normal activity and adds it to the Isolation Forest baseline. Do normal work while it records.
+- **Simulations never touch real processes.** Simulated entries use negative PIDs and are marked `[SIMULATED]` in alerts and incidents.
+- **Browser policy:** only tab renderer processes are terminated, and only after staying above 70% CPU for ~6 seconds (3 polls). The main browser process is alerted on, never killed.
+- **Ransomware response** kills only processes that can be linked to the watched folders (open file, working directory, or command line). If none can be identified, OSentinel raises an alert instead of guessing.
+
+---
+
 ## ⚡ Quick Start Guide
 
 ### 1. Prerequisites

@@ -9,7 +9,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Back
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from backend.config import POLL_INTERVAL_SEC
+from contextlib import asynccontextmanager
+from backend.config import POLL_INTERVAL_SEC, API_HOST, CORS_ORIGINS
 from backend.database import (
     init_db,
     get_recent_events,
@@ -32,18 +33,29 @@ from backend.modules.module7_risk_assessment import calculate_risk_score, triage
 from backend.modules.attack_simulator import trigger_attack_simulation, get_active_simulation
 from backend.modules.train_models import train_and_save_models
 
+@asynccontextmanager
+async def lifespan(app):
+    # Start background monitoring loop thread on startup
+    t = threading.Thread(target=telemetry_polling_loop, daemon=True)
+    t.start()
+    yield
+
+
 app = FastAPI(
     title="OSentinel Security Framework API",
     description="Intelligent Host-Based Security Framework with 2-Stage ML & Real-Time SOC Telemetry",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
+# Only the dashboard origins may call the API from a browser. This stops a random
+# website open in your browser from calling /api/contain on localhost.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type"],
 )
 
 # Global State Container
@@ -86,9 +98,15 @@ def telemetry_polling_loop():
     """Background thread polling system telemetry and executing OSentinel detection pipeline."""
     global current_telemetry_state
     
-    # Initialize DB & ML models
+    # Initialize DB & ML models (train once automatically on a fresh clone)
     init_db()
-    load_ml_models()
+    if not load_ml_models():
+        print("[OSentinel] No trained models found. Training initial models (one-time, ~10s)...")
+        try:
+            train_and_save_models()
+            load_ml_models()
+        except Exception as e:
+            print(f"[OSentinel] Model training failed, running rules-only: {e}")
     
     while True:
         try:
@@ -135,12 +153,6 @@ def telemetry_polling_loop():
             print(f"[OSentinel Loop Error] {e}")
             
         time.sleep(POLL_INTERVAL_SEC)
-
-# Start background monitoring loop thread on startup
-@app.on_event("startup")
-def startup_event():
-    t = threading.Thread(target=telemetry_polling_loop, daemon=True)
-    t.start()
 
 # --- REST ENDPOINTS ---
 
@@ -194,7 +206,10 @@ def contain_incident(req: ContainRequest):
 
 @app.post("/api/retrain")
 def retrain_models(background_tasks: BackgroundTasks):
-    background_tasks.add_task(train_and_save_models)
+    def retrain_and_reload():
+        train_and_save_models()
+        load_ml_models()  # make the running pipeline use the new models immediately
+    background_tasks.add_task(retrain_and_reload)
     return {"success": True, "message": "Model retraining job queued in background."}
 
 # --- RESTRICTED NETWORKS & IP ACCESS CONTROL ENDPOINTS ---
@@ -263,4 +278,5 @@ if FRONTEND_DIST.exists():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=False)
+    # Localhost only by default; set OSENTINEL_HOST=0.0.0.0 to expose on the network
+    uvicorn.run("backend.main:app", host=API_HOST, port=port, reload=False)

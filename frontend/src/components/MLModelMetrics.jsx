@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { BrainCircuit, RefreshCw, BarChart3, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { fetchMLMetrics, retrainMLModels } from '../services/api';
 
+// Show '—' when the model is not trained yet instead of a fake 100%
+const fmtPct = (v) => (typeof v === 'number' ? `${(v * 100).toFixed(1)}%` : '—');
+
 export default function MLModelMetrics() {
   const [metrics, setMetrics] = useState(null);
   const [retraining, setRetraining] = useState(false);
@@ -79,7 +82,7 @@ export default function MLModelMetrics() {
               MODEL ACCURACY
             </span>
             <div className="text-3xl font-extrabold text-slate-900 my-1.5 leading-none">
-              {((metrics?.accuracy ?? 1.0) * 100).toFixed(1)}%
+              {fmtPct(metrics?.accuracy)}
             </div>
           </div>
           <div className="text-xs text-slate-500 font-medium">
@@ -93,7 +96,7 @@ export default function MLModelMetrics() {
               PRECISION SCORE
             </span>
             <div className="text-3xl font-extrabold text-slate-900 my-1.5 leading-none">
-              {((metrics?.precision ?? 1.0) * 100).toFixed(1)}%
+              {fmtPct(metrics?.precision)}
             </div>
           </div>
           <div className="text-xs text-slate-500 font-medium">
@@ -107,7 +110,7 @@ export default function MLModelMetrics() {
               RECALL SCORE
             </span>
             <div className="text-3xl font-extrabold text-slate-900 my-1.5 leading-none">
-              {((metrics?.recall ?? 1.0) * 100).toFixed(1)}%
+              {fmtPct(metrics?.recall)}
             </div>
           </div>
           <div className="text-xs text-slate-500 font-medium">
@@ -121,7 +124,7 @@ export default function MLModelMetrics() {
               F1-SCORE
             </span>
             <div className="text-3xl font-extrabold text-slate-900 my-1.5 leading-none">
-              {((metrics?.f1_score ?? 1.0) * 100).toFixed(1)}%
+              {fmtPct(metrics?.f1_score)}
             </div>
           </div>
           <div className="text-xs text-slate-500 font-medium">

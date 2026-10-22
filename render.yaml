@@ -7,3 +7,7 @@ services:
     envVars:
       - key: PORT
         value: 8000
+      # Cloud deploy needs to listen on all interfaces. NOTE: in the cloud OSentinel
+      # monitors the Render container, not your laptop. Run locally for real monitoring.
+      - key: OSENTINEL_HOST
+        value: 0.0.0.0

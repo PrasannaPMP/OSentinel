@@ -1,93 +1,120 @@
 import psutil
 import time
-import os
 import sys
-import re
-from backend.config import SUSPICIOUS_PATHS
+from backend.config import (
+    is_suspicious_temp_path,
+    normalize_path,
+    BROWSER_TAB_CPU_THRESHOLD,
+    BROWSER_SUSTAINED_SAMPLES,
+    TAB_BURST_THRESHOLD,
+)
 
-_last_process_count = 0
+_known_pids = set()
 _last_sample_time = time.time()
-_last_proc_cpu_times = {} # {pid: (user_time, sys_time, timestamp)}
+_last_proc_cpu_times = {}  # {pid: (user_time, sys_time, timestamp)}
 _known_browser_tab_pids = set()
+_browser_high_cpu_streak = {}  # {pid: consecutive polls above threshold}
 _simulated_proc_activity = None
 _simulated_browser_activity = None
 
-BROWSER_KEYWORDS = [
-    "safari", "webkit.webcontent", "webkit", "chrome", "google chrome",
-    "google chrome helper", "firefox", "msedge", "microsoft edge", "brave", "opera", "edge"
-]
+CPU_COUNT = psutil.cpu_count(logical=True) or 1
 
-TRUSTED_PREFIXES = ["/applications", "/usr", "/system", "/library", "c:/program files", "c:/windows/system32"]
+# Simulated processes use NEGATIVE PIDs so they can never collide with a real
+# process. Containment code must also skip anything marked "simulated".
+SIM_MINER_PID = -69420
+SIM_TAB_PID_BASE = -77000
+
+BROWSER_NAME_KEYWORDS = ["chrome", "safari", "firefox", "msedge", "edge", "brave", "opera", "webkit"]
+BROWSER_EXE_KEYWORDS = ["google chrome", "safari.app", "firefox", "msedge", "brave", "opera", "webkit"]
+
+# Interpreters whose *script argument* decides where the code really came from.
+INTERPRETER_NAMES = ["python", "python3", "pythonw", "node", "bash", "sh", "zsh", "perl", "ruby",
+                     "powershell", "pwsh", "cmd", "wscript", "cscript"]
+
+# Signature names used by the demo / common miner and shell tools.
+KNOWN_ROGUE_MARKERS = ["osentinel_rogue", "xmrig", "nc_shell"]
+
 
 def is_browser_process(process_name: str, cmdline: str = "", exe: str = "") -> bool:
-    """Accurately detects web browser instances (Chrome, Safari, Firefox, Edge, Opera, Brave)."""
+    """Detects web browser processes (Chrome, Safari, Firefox, Edge, Opera, Brave)."""
     name_clean = (process_name or "").lower()
-    cmd_clean = (cmdline or "").lower()
     exe_clean = (exe or "").lower()
-    text = f"{name_clean} {cmd_clean} {exe_clean}"
-    
+
     # AntiGravity IDE is never a web browser
-    if "antigravity" in text:
+    if "antigravity" in name_clean or "antigravity" in exe_clean:
         return False
-        
-    if any(b in name_clean for b in ["chrome", "safari", "firefox", "msedge", "edge", "brave", "opera", "webkit"]):
+
+    if any(b in name_clean for b in BROWSER_NAME_KEYWORDS):
         return True
-    if any(b in exe_clean for b in ["google chrome", "safari.app", "firefox", "msedge", "brave", "opera", "webkit"]):
+    if any(b in exe_clean for b in BROWSER_EXE_KEYWORDS):
         return True
     return False
 
+
 def is_browser_tab(process_name: str, cmdline: str = "", exe: str = "") -> bool:
-    """Identifies individual browser tab renderer/worker processes that can be safely closed without crashing the browser."""
+    """
+    Identifies browser TAB renderer processes only. Killing one of these closes a
+    tab without crashing the browser. The main browser process, GPU, network and
+    utility helpers and extension processes are NOT tabs and are never matched.
+    """
     if not is_browser_process(process_name, cmdline, exe):
         return False
     name_clean = (process_name or "").lower()
     cmd_clean = (cmdline or "").lower()
-    
-    # macOS Chrome Helper / Renderer
-    if "renderer" in name_clean or "--type=renderer" in cmd_clean:
+
+    # Extensions run as renderers too, but they are not tabs
+    if "--extension-process" in cmd_clean:
+        return False
+    # Chrome / Edge / Brave renderer (all platforms)
+    if "--type=renderer" in cmd_clean or "(renderer)" in name_clean:
         return True
-    # macOS Safari WebContent process (each tab runs in a WebContent process)
-    if "webcontent" in name_clean or "com.apple.webkit.webcontent" in name_clean:
+    # Safari: each tab runs in a WebContent process
+    if "webcontent" in name_clean:
         return True
-    # Firefox tab processes
-    if "tab" in name_clean or "-contentproc" in cmd_clean or "plugin-container" in name_clean:
-        return True
-    # Chrome Helper processes
-    if "chrome helper" in name_clean:
+    # Firefox content processes for tabs
+    if "-contentproc" in cmd_clean and " tab" in f" {cmd_clean}":
         return True
     return False
 
+
 def is_ide_process(process_name: str, cmdline: str = "", exe: str = "") -> bool:
     """
-    Identifies AntiGravity IDE - the SOLE PERMITTED EXCEPTION.
-    Must NEVER falsely match standard web browsers (Chrome, Safari, Firefox, Edge).
+    AntiGravity IDE is the SOLE PERMITTED EXCEPTION.
+
+    Matching is done on the process NAME and EXECUTABLE PATH only. The command
+    line is intentionally ignored: any program can put "antigravity" in its
+    arguments, which would let malware exempt itself from termination.
+    Generic runtimes (python, node, electron) are NOT exempt.
     """
     name_clean = (process_name or "").lower()
-    cmd_clean = (cmdline or "").lower()
-    exe_clean = (exe or "").lower()
-    text = f"{name_clean} {cmd_clean} {exe_clean}"
-    
-    # Standard web browsers are NEVER the IDE
-    if any(b in text for b in [
-        "google chrome.app", "safari.app", "com.apple.webkit",
-        "google chrome helper", "firefox.app", "msedge.app"
-    ]):
-        return False
-        
-    # AntiGravity IDE is the sole permitted exception
-    if "antigravity" in text:
+    exe_clean = normalize_path(exe)
+    return "antigravity" in name_clean or "antigravity" in exe_clean
+
+
+def detect_temp_execution(exe: str, cmdline_parts: list, process_name: str) -> bool:
+    """
+    True if the binary itself, or the script handed to an interpreter, lives in a
+    temp/scratch directory. A trusted interpreter (/usr/bin/python3) running
+    /tmp/payload.py is still flagged.
+    """
+    if is_suspicious_temp_path(exe):
         return True
-        
-    # Core workspace developer processes
-    dev_names = ["electron", "vscode", "cursor", "language_server", "uvicorn", "vite", "node", "python", "python3"]
-    if name_clean in dev_names:
-        return True
-    if any(d in name_clean for d in ["antigravity", "electron", "cursor"]):
-        return True
-    if re.search(r'\b(code|vscode|electron|cursor|language_server)\b', name_clean):
-        return True
-        
+
+    if cmdline_parts:
+        if is_suspicious_temp_path(cmdline_parts[0]):
+            return True
+        base = normalize_path(cmdline_parts[0]).rsplit("/", 1)[-1].replace(".exe", "")
+        name = (process_name or "").lower().replace(".exe", "")
+        if any(base.startswith(i) or name.startswith(i) for i in INTERPRETER_NAMES):
+            # First non-flag argument is the script being run
+            for arg in cmdline_parts[1:]:
+                if arg.startswith("-"):
+                    if arg in ("-m", "-c", "-e", "-Command", "-EncodedCommand"):
+                        break  # module / inline code, not a file
+                    continue
+                return is_suspicious_temp_path(arg)
     return False
+
 
 def set_simulated_process_activity(total_cpu: float = 98.4, spawn_rate: float = 12.0, is_tmp: bool = True):
     """Allows safe injection of elevated CPU spikes (>95%) and spawn velocity for threat simulations."""
@@ -99,6 +126,7 @@ def set_simulated_process_activity(total_cpu: float = 98.4, spawn_rate: float = 
         "expire_time": time.time() + 4.0
     }
 
+
 def set_simulated_browser_activity(cpu: float = 78.5, tab_count: int = 4):
     """Allows safe simulation of runaway browser tabs (>=70% CPU) or multiple tabs burst."""
     global _simulated_browser_activity
@@ -108,8 +136,9 @@ def set_simulated_browser_activity(cpu: float = 78.5, tab_count: int = 4):
         "expire_time": time.time() + 4.0
     }
 
+
 def get_accurate_process_cpu(proc, pid: int, current_time: float) -> float:
-    """Accurately calculates real-time CPU percentage by computing time deltas between samples."""
+    """Per-process CPU % from time deltas between samples (100% = one full core)."""
     global _last_proc_cpu_times
     try:
         t = proc.cpu_times()
@@ -119,31 +148,43 @@ def get_accurate_process_cpu(proc, pid: int, current_time: float) -> float:
             delta = (t.user - prev_u) + (t.system - prev_s)
             cpu_pct = round((delta / dt) * 100.0, 1)
         else:
-            # If process was just spawned, estimate real CPU from process lifetime
+            # Newly seen process: estimate from lifetime average
             try:
                 proc_age = max(0.1, current_time - proc.create_time())
                 cpu_pct = round(((t.user + t.system) / proc_age) * 100.0, 1)
             except Exception:
                 cpu_pct = 0.0
-            
+
         _last_proc_cpu_times[pid] = (t.user, t.system, current_time)
         return max(0.0, cpu_pct)
     except Exception:
         return 0.0
 
+
+def _simulated_process(pid, name, exe, cmdline, cpu, mem, user, is_tmp, is_browser, is_tab):
+    return {
+        "pid": pid, "ppid": 1, "name": name, "exe": exe, "cmdline": cmdline,
+        "cpu_percent": round(cpu, 1), "memory_percent": mem, "user": user,
+        "is_tmp": is_tmp, "is_browser": is_browser, "is_browser_tab": is_tab,
+        "is_ide": False,
+        "browser_cpu_streak": BROWSER_SUSTAINED_SAMPLES if (is_browser and cpu >= BROWSER_TAB_CPU_THRESHOLD) else 0,
+        "simulated": True,
+    }
+
+
 def collect_process_telemetry():
-    global _last_process_count, _last_sample_time, _simulated_proc_activity, _simulated_browser_activity, _last_proc_cpu_times, _known_browser_tab_pids
-    
+    global _known_pids, _last_sample_time, _simulated_proc_activity, _simulated_browser_activity
+    global _last_proc_cpu_times, _known_browser_tab_pids, _browser_high_cpu_streak
+
     processes = []
     tmp_execution_count = 0
     browser_high_cpu_count = 0
     current_tab_pids = set()
     total_cpu = 0.0
-    total_mem = 0.0
-    
+
     current_time = time.time()
     dt = max(0.1, current_time - _last_sample_time)
-    
+
     is_sim_active = bool(_simulated_proc_activity and current_time < _simulated_proc_activity["expire_time"])
     if not is_sim_active:
         _simulated_proc_activity = None
@@ -151,10 +192,11 @@ def collect_process_telemetry():
     is_browser_sim_active = bool(_simulated_browser_activity and current_time < _simulated_browser_activity["expire_time"])
     if not is_browser_sim_active:
         _simulated_browser_activity = None
-    
+
     active_pids = set()
-    
-    for proc in psutil.process_iter(['pid', 'ppid', 'name', 'exe', 'cmdline', 'memory_percent', 'username']):
+    new_streaks = {}
+
+    for proc in psutil.process_iter(['pid', 'ppid', 'name', 'exe', 'cmdline', 'memory_percent', 'username', 'create_time']):
         try:
             info = proc.info
             pid = info['pid']
@@ -162,50 +204,38 @@ def collect_process_telemetry():
             name = info['name'] or f"proc_{pid}"
             exe = (info['exe'] or "").replace("\\", "/")
             mem = info['memory_percent'] or 0.0
-            raw_cmdline = " ".join(info['cmdline']) if info['cmdline'] else name
-            cmdline_normalized = raw_cmdline.replace("\\", "/").lower()
-            
-            # Accurate real-time CPU calculation
+            cmd_parts = info['cmdline'] or []
+            raw_cmdline = " ".join(cmd_parts) if cmd_parts else name
+            cmdline_normalized = normalize_path(raw_cmdline)
+
             cpu = get_accurate_process_cpu(proc, pid, current_time)
-            
+
+            is_ide = is_ide_process(name, raw_cmdline, exe)
             is_browser = is_browser_process(name, raw_cmdline, exe)
             is_tab = is_browser_tab(name, raw_cmdline, exe) if is_browser else False
-            is_ide = is_ide_process(name, raw_cmdline, exe)
-            
+
             if is_tab:
                 current_tab_pids.add(pid)
-            
-            # Auto-flag browsers exceeding 70% threshold
-            if is_browser and cpu >= 70.0 and not is_ide:
-                browser_high_cpu_count += 1
-            
-            # Accurate temp path execution check
+
+            # Track how long a browser process has stayed above the CPU threshold
+            streak = 0
+            if is_browser and not is_ide and cpu >= BROWSER_TAB_CPU_THRESHOLD:
+                streak = _browser_high_cpu_streak.get(pid, 0) + 1
+                new_streaks[pid] = streak
+                if streak >= BROWSER_SUSTAINED_SAMPLES:
+                    browser_high_cpu_count += 1
+
             is_tmp = False
-            is_trusted_exe = any(exe.lower().startswith(prefix) for prefix in TRUSTED_PREFIXES)
-            
-            if not is_ide and not is_trusted_exe:
-                for sp in SUSPICIOUS_PATHS:
-                    sp_norm = sp.replace("\\", "/").lower()
-                    if exe.lower().startswith(sp_norm):
-                        is_tmp = True
-                        break
-                    parts = raw_cmdline.split()
-                    if len(parts) > 1 and parts[1].replace("\\", "/").lower().startswith(sp_norm):
-                        is_tmp = True
-                        break
-                    elif parts and parts[0].replace("\\", "/").lower().startswith(sp_norm):
-                        is_tmp = True
-                        break
-            
-            if "osentinel_rogue" in cmdline_normalized or "xmrig" in cmdline_normalized or "nc_shell" in cmdline_normalized:
-                is_tmp = True
-                
+            if not is_ide:
+                is_tmp = detect_temp_execution(exe, cmd_parts, name)
+                if any(m in cmdline_normalized for m in KNOWN_ROGUE_MARKERS):
+                    is_tmp = True
+
             if is_tmp:
                 tmp_execution_count += 1
-                
+
             total_cpu += cpu
-            total_mem += mem
-            
+
             processes.append({
                 "pid": pid,
                 "ppid": info['ppid'],
@@ -218,113 +248,114 @@ def collect_process_telemetry():
                 "is_tmp": is_tmp,
                 "is_browser": is_browser,
                 "is_browser_tab": is_tab,
-                "is_ide": is_ide
+                "is_ide": is_ide,
+                "browser_cpu_streak": streak,
+                "create_time": info.get('create_time'),
+                "simulated": False,
             })
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, PermissionError):
             continue
-            
-    # Purge exited PIDs from CPU tracker
+
+    # Purge exited PIDs from trackers
     _last_proc_cpu_times = {pid: v for pid, v in _last_proc_cpu_times.items() if pid in active_pids}
-    
-    # Detect Multiple Tabs Opening Burst (>=3 new tabs spawned in sampling window)
+    _browser_high_cpu_streak = new_streaks
+
+    # Tab burst: many NEW renderer processes appearing within one poll window
     new_tab_pids = set()
     multiple_tabs_burst = False
     if _known_browser_tab_pids:
         new_tab_pids = current_tab_pids - _known_browser_tab_pids
-        if len(new_tab_pids) >= 3:
+        if len(new_tab_pids) >= TAB_BURST_THRESHOLD:
             multiple_tabs_burst = True
     _known_browser_tab_pids = current_tab_pids
-    
-    current_count = len(processes)
-    spawn_velocity = max(0.0, (current_count - _last_process_count) / dt) if _last_process_count > 0 else 0.0
-    _last_process_count = current_count
+    if not multiple_tabs_burst:
+        new_tab_pids = set()
+
+    # Spawn rate = genuinely new PIDs per second (process exits no longer cancel it out)
+    spawn_velocity = (len(active_pids - _known_pids) / dt) if _known_pids else 0.0
+    _known_pids = active_pids
     _last_sample_time = current_time
-    
+
+    current_count = len(processes)
+    # Normalise to 0-100% of total machine capacity (summed per-process % can reach 100 x cores)
+    system_cpu = min(100.0, total_cpu / CPU_COUNT)
+    try:
+        mem_percent = psutil.virtual_memory().percent
+    except Exception:
+        mem_percent = 0.0
+
+    simulated_pids = []
+
     if is_sim_active:
         sim_cpu = _simulated_proc_activity["total_cpu"]
         sim_spawn = _simulated_proc_activity["spawn_rate"]
-        tmp_execution_count = max(1, tmp_execution_count)
-        total_cpu = max(sim_cpu, total_cpu)
+        if _simulated_proc_activity["is_tmp"]:
+            tmp_execution_count = max(1, tmp_execution_count)
+        system_cpu = max(sim_cpu, system_cpu)
         spawn_velocity = max(sim_spawn, spawn_velocity)
-        
-        processes.insert(0, {
-            "pid": 69420,
-            "ppid": 1,
-            "name": "xmrig_crypto_miner",
-            "exe": "/tmp/xmrig_miner" if sys.platform != "win32" else "C:/Windows/Temp/xmrig_miner.exe",
-            "cmdline": "./xmrig --threads=8 --algo=randomx --cpu-priority=5",
-            "cpu_percent": round(sim_cpu * 0.96, 1),
-            "memory_percent": 18.5,
-            "user": "threat_actor",
-            "is_tmp": True,
-            "is_browser": False,
-            "is_browser_tab": False,
-            "is_ide": False
-        })
+        processes.insert(0, _simulated_process(
+            SIM_MINER_PID, "xmrig_crypto_miner",
+            "/tmp/xmrig_miner" if sys.platform != "win32" else "C:/Windows/Temp/xmrig_miner.exe",
+            "./xmrig --threads=8 --algo=randomx --cpu-priority=5",
+            sim_cpu * 0.96, 18.5, "threat_actor",
+            _simulated_proc_activity["is_tmp"], False, False,
+        ))
+        simulated_pids.append(SIM_MINER_PID)
 
     if is_browser_sim_active:
         sim_b_cpu = _simulated_browser_activity["cpu"]
         sim_tab_count = _simulated_browser_activity["tab_count"]
         browser_high_cpu_count = max(1, browser_high_cpu_count)
         multiple_tabs_burst = True
-        
         for i in range(sim_tab_count):
-            sim_pid = 77000 + i
-            processes.insert(0, {
-                "pid": sim_pid,
-                "ppid": 44970,
-                "name": "Google Chrome Helper (Renderer)",
-                "exe": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-                "cmdline": f"--type=renderer --simulation-tab={i}",
-                "cpu_percent": round(sim_b_cpu if i == 0 else 45.0, 1),
-                "memory_percent": 12.0,
-                "user": "browser_user",
-                "is_tmp": False,
-                "is_browser": True,
-                "is_browser_tab": True,
-                "is_ide": False
-            })
+            sim_pid = SIM_TAB_PID_BASE - i
+            processes.insert(0, _simulated_process(
+                sim_pid, "Google Chrome Helper (Renderer)",
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                f"--type=renderer --simulation-tab={i}",
+                sim_b_cpu if i == 0 else 45.0, 12.0, "browser_user",
+                False, True, True,
+            ))
             new_tab_pids.add(sim_pid)
-    
+            simulated_pids.append(sim_pid)
+
     processes.sort(key=lambda p: p['cpu_percent'], reverse=True)
-    
-    # Priority Selection: NEVER truncate out browser tabs, runaway processes, or tmp executions!
+
+    # Priority selection: never drop browser tabs, runaway processes or temp executions
     actionable_pids = set()
     actionable_processes = []
-    
-    # 1. High CPU processes (miners, runaway scripts)
-    for p in processes:
-        if p["cpu_percent"] >= 50.0:
+
+    def take(p):
+        if p["pid"] not in actionable_pids:
             actionable_pids.add(p["pid"])
             actionable_processes.append(p)
-            
-    # 2. Browser processes & tabs (guarantee they reach triage_and_respond)
+
     for p in processes:
-        if p["is_browser"] and p["pid"] not in actionable_pids:
-            actionable_pids.add(p["pid"])
-            actionable_processes.append(p)
-            
-    # 3. Temp executions
+        if p["cpu_percent"] >= 50.0 or p.get("simulated"):
+            take(p)
     for p in processes:
-        if p["is_tmp"] and p["pid"] not in actionable_pids:
-            actionable_pids.add(p["pid"])
-            actionable_processes.append(p)
-            
-    # 4. Fill up to 60 with highest CPU processes
+        if p["is_browser"]:
+            take(p)
     for p in processes:
-        if p["pid"] not in actionable_pids and len(actionable_processes) < 60:
-            actionable_pids.add(p["pid"])
-            actionable_processes.append(p)
-    
+        if p["is_tmp"]:
+            take(p)
+    for p in processes:
+        if len(actionable_processes) >= 60:
+            break
+        take(p)
+
     return {
-        "process_count": current_count + (1 if is_sim_active else 0),
+        "process_count": current_count + len(simulated_pids),
         "processes": actionable_processes,
         "tmp_execution_count": tmp_execution_count,
         "browser_high_cpu_count": browser_high_cpu_count,
         "multiple_tabs_burst": multiple_tabs_burst,
         "new_tab_count": len(new_tab_pids),
         "new_tab_pids": list(new_tab_pids),
+        "simulated_pids": simulated_pids,
         "avg_cpu_percent": round(total_cpu / max(1, current_count), 2),
-        "total_cpu_percent": round(total_cpu, 1),
+        "total_cpu_percent": round(system_cpu, 1),
+        "mem_percent": round(mem_percent, 1),
+        "cpu_count": CPU_COUNT,
         "spawn_rate": round(spawn_velocity, 2)
     }
